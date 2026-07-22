@@ -5,7 +5,7 @@ import { Play, Square } from 'lucide-react'
 export default memo(function TransitionCard({ pattern, index, projectData }) {
   const { width, height, transitionSteps } = projectData
   const paintCell = useProjectStore(state => state.paintCell)
-  const saveHistory = useProjectStore(state => state.saveHistory)
+  const startStroke = useProjectStore(state => state.startStroke)
   const patterns = useProjectStore(state => state.patterns)
   const activePatternId = useProjectStore(state => state.activePatternId)
   const brushSize = useProjectStore(state => state.brushSize)
@@ -66,12 +66,24 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
           const step = pattern.transitions?.[coord]?.step || 1;
           
           if (step === simStep) {
-            animationsRef.current.set(coord, {
-              startT: now,
-              delay: Math.random() * 400,
-              fromData: previousPattern ? previousPattern.grid?.[coord] : null,
-              toData: pattern.grid?.[coord]
-            });
+            const fromData = previousPattern ? previousPattern.grid?.[coord] : null;
+            const toData = pattern.grid?.[coord];
+
+            let isIdentical = false;
+            if (fromData && toData) {
+              isIdentical = fromData.color === toData.color && fromData.pos === toData.pos;
+            } else if (!fromData && !toData) {
+              isIdentical = true;
+            }
+
+            if (!isIdentical) {
+              animationsRef.current.set(coord, {
+                startT: now,
+                delay: Math.random() * 400,
+                fromData,
+                toData
+              });
+            }
           }
         }
       }
@@ -352,10 +364,10 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     } else if (activeTool === 'magic-wand') {
       selectMagicWand(pattern.id, getColName(coord.col), coord.row, 'transition');
     } else {
-      saveHistory(); // Save history before starting to paint
+      startStroke(pattern.id); // Save history before starting to paint
       paintCell(pattern.id, getColName(coord.col), coord.row, 'transition');
     }
-  }, [isActive, calculateGridCoord, saveHistory, paintCell, pattern.id, activeTool, selectMagicWand, setMagicSelection, setToolState]);
+  }, [isActive, calculateGridCoord, startStroke, paintCell, pattern.id, activeTool, selectMagicWand, setMagicSelection, setToolState]);
 
   return (
     <div className="card" style={{ 

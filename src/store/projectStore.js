@@ -496,11 +496,11 @@ export const useProjectStore = create((set, get) => ({
           
           if (item.cellData) {
             newPattern.grid[targetCoord] = JSON.parse(JSON.stringify(item.cellData));
-            firebaseDeltas[`patternsMap.${pattern.id}.grid.${targetCoord}`] = item.cellData;
+            firebaseDeltas[`patternsMap.${newPattern.id}.grid.${targetCoord}`] = item.cellData;
             strokeDeltas[targetCoord] = { old: oldVal, new: item.cellData, target: 'pattern' };
           } else {
             delete newPattern.grid[targetCoord];
-            firebaseDeltas[`patternsMap.${pattern.id}.grid.${targetCoord}`] = null;
+            firebaseDeltas[`patternsMap.${newPattern.id}.grid.${targetCoord}`] = null;
             strokeDeltas[targetCoord] = { old: oldVal, new: null, target: 'pattern' };
           }
         } else {
@@ -508,11 +508,11 @@ export const useProjectStore = create((set, get) => ({
           
           if (item.cellData) {
             newPattern.transitions[targetCoord] = JSON.parse(JSON.stringify(item.cellData));
-            firebaseDeltas[`patternsMap.${pattern.id}.transitions.${targetCoord}`] = item.cellData;
+            firebaseDeltas[`patternsMap.${newPattern.id}.transitions.${targetCoord}`] = item.cellData;
             strokeDeltas[targetCoord] = { old: oldVal, new: item.cellData, target: 'transition' };
           } else {
             delete newPattern.transitions[targetCoord];
-            firebaseDeltas[`patternsMap.${pattern.id}.transitions.${targetCoord}`] = null;
+            firebaseDeltas[`patternsMap.${newPattern.id}.transitions.${targetCoord}`] = null;
             strokeDeltas[targetCoord] = { old: oldVal, new: null, target: 'transition' };
           }
         }
@@ -525,7 +525,7 @@ export const useProjectStore = create((set, get) => ({
 
     newPatterns[patternIndex] = newPattern;
     
-    const stroke = { patternId: pattern.id, deltas: strokeDeltas };
+    const stroke = { patternId: newPattern.id, deltas: strokeDeltas };
     const maxHistory = 30;
     const newPast = [...state.past, stroke];
     if (newPast.length > maxHistory) newPast.shift();

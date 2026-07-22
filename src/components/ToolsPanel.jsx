@@ -126,7 +126,6 @@ export default function ToolsPanel({ projectData }) {
                   onClick={() => {
                     store.setToolState({ selectedColor: color })
                     if (magicSelection?.length > 0) {
-                      store.saveHistory()
                       store.fillMagicSelection(color, selectedPosition)
                     }
                   }}
@@ -149,7 +148,6 @@ export default function ToolsPanel({ projectData }) {
                   onClick={() => {
                     store.setToolState({ selectedPosition: 'J' })
                     if (magicSelection?.length > 0) {
-                      store.saveHistory()
                       store.fillMagicSelection(selectedColor, 'J')
                     }
                   }}
@@ -164,7 +162,6 @@ export default function ToolsPanel({ projectData }) {
                   onClick={() => {
                     store.setToolState({ selectedPosition: 'B' })
                     if (magicSelection?.length > 0) {
-                      store.saveHistory()
                       store.fillMagicSelection(selectedColor, 'B')
                     }
                   }}
@@ -186,7 +183,6 @@ export default function ToolsPanel({ projectData }) {
                     onClick={() => {
                       store.setToolState({ selectedTransitionStep: step })
                       if (magicSelection?.length > 0) {
-                        store.saveHistory()
                         store.fillMagicSelectionTransition(step)
                       }
                     }}

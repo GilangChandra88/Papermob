@@ -73,7 +73,13 @@ export default function Simulation() {
     try {
       const data = await getProjectById(id)
       setProjectData(data)
-      setPatterns(data.patterns || [])
+      let loadedPatterns = [];
+      if (data.patternsMap && data.patternOrder) {
+        loadedPatterns = data.patternOrder.map(pid => data.patternsMap[pid]).filter(Boolean);
+      } else if (data.patterns && data.patterns.length > 0) {
+        loadedPatterns = data.patterns;
+      }
+      setPatterns(loadedPatterns)
     } catch (e) {
       console.error(e)
       alert("Gagal memuat projek")
@@ -97,7 +103,11 @@ export default function Simulation() {
     setEditingPatternId(null);
     
     try {
-      await updateProjectData(id, { patterns: newPatterns });
+      if (projectData.patternsMap) {
+        await updateProjectData(id, { [`patternsMap.${patternId}.name`]: editingPatternName });
+      } else {
+        await updateProjectData(id, { patterns: newPatterns });
+      }
     } catch (e) {
       console.error("Gagal menyimpan nama pola:", e);
       alert("Gagal menyimpan nama pola ke database.");
@@ -170,12 +180,24 @@ export default function Simulation() {
           const step = pattern.transitions?.[coord]?.step || 1;
           
           if (step === simStep) {
-            animationsRef.current.set(coord, {
-              startT: now,
-              delay: Math.random() * 400,
-              fromData: previousPattern ? previousPattern.grid?.[coord] : null,
-              toData: pattern.grid?.[coord]
-            });
+            const fromData = previousPattern ? previousPattern.grid?.[coord] : null;
+            const toData = pattern.grid?.[coord];
+            
+            let isIdentical = false;
+            if (fromData && toData) {
+              isIdentical = fromData.color === toData.color && fromData.pos === toData.pos;
+            } else if (!fromData && !toData) {
+              isIdentical = true;
+            }
+
+            if (!isIdentical) {
+              animationsRef.current.set(coord, {
+                startT: now,
+                delay: Math.random() * 400,
+                fromData,
+                toData
+              });
+            }
           }
         }
       }

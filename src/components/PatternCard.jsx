@@ -5,7 +5,6 @@ import { useProjectStore, getColName, getColIndex } from '../store/projectStore'
 export default memo(function PatternCard({ pattern, index, projectData }) {
   const { width, height } = projectData
   const paintCell = useProjectStore(state => state.paintCell)
-  const saveHistory = useProjectStore(state => state.saveHistory)
   const activePatternId = useProjectStore(state => state.activePatternId)
   const brushSize = useProjectStore(state => state.brushSize)
   const activeTool = useProjectStore(state => state.activeTool)
