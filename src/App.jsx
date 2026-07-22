@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { auth } from './firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 
