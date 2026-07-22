@@ -7,6 +7,8 @@ import { onAuthStateChanged } from 'firebase/auth'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import ProjectEditor from './pages/ProjectEditor'
+import Simulation from './pages/Simulation'
+import ExportPage from './pages/ExportPage'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -33,7 +35,9 @@ function App() {
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
-        <Route path="/project/:id" element={user ? <ProjectEditor /> : <Navigate to="/login" />} />
+        <Route path="/project/:id" element={user ? <ProjectEditor user={user} /> : <Navigate to="/login" />} />
+        <Route path="/project/:id/simulation" element={user ? <Simulation /> : <Navigate to="/login" />} />
+        <Route path="/project/:id/export" element={user ? <ExportPage user={user} /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>

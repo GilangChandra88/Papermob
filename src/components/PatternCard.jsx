@@ -12,6 +12,9 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const magicSelection = useProjectStore(state => state.magicSelection)
   const selectMagicWand = useProjectStore(state => state.selectMagicWand)
   const setMagicSelection = useProjectStore(state => state.setMagicSelection)
+  const magicSelectionTarget = useProjectStore(state => state.magicSelectionTarget)
+  const startStroke = useProjectStore(state => state.startStroke)
+  const endStroke = useProjectStore(state => state.endStroke)
   const hoveredCoord = useProjectStore(state => state.hoveredCoord)
   const setHoveredCoord = useProjectStore(state => state.setHoveredCoord)
   const setToolState = useProjectStore(state => state.setToolState)
@@ -35,113 +38,159 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const canvasHeight = HEADER_ROW_H + GAP + (height * (CELL_SIZE + GAP));
 
   // Helper to get X and Y for a given col (1-indexed) and row (1-indexed)
-  const getCellRect = (c, r) => {
+  const getCellRect = useCallback((c, r) => {
     const x = HEADER_COL_W + GAP + (c - 1) * (CELL_SIZE + GAP);
     const y = HEADER_ROW_H + GAP + (r - 1) * (CELL_SIZE + GAP);
     return { x, y, w: CELL_SIZE, h: CELL_SIZE };
-  }
+  }, []);
 
-  // Draw the entire base grid
+  // Track previous grid state for delta rendering
+  const prevGridRef = useRef(null);
+  const prevWidthRef = useRef(null);
+  const prevHeightRef = useRef(null);
+  const prevMagicRef = useRef(null);
+  const prevActiveRef = useRef(null);
+
+  // Helper to draw a single cell
+  const drawCell = useCallback((ctx, c, r, cellData, isMagicSelected, isCardActive, target) => {
+    const rect = getCellRect(c, r);
+    let bgColor = '#e2e8f0';
+    let textColor = '#64748b';
+    let overlayColor = null;
+
+    if (cellData) {
+      bgColor = cellData.color;
+      let hex = cellData.color || '#ffffff';
+      if (hex.startsWith('#') && hex.length === 7) {
+        let rHex = parseInt(hex.substring(1, 3), 16);
+        let gHex = parseInt(hex.substring(3, 5), 16);
+        let bHex = parseInt(hex.substring(5, 7), 16);
+        let yiq = ((rHex * 299) + (gHex * 587) + (bHex * 114)) / 1000;
+        textColor = (yiq >= 128) ? '#0f172a' : 'white';
+        
+        if (cellData.pos === 'J') {
+          if (yiq >= 50) overlayColor = 'rgba(0,0,0,0.15)'; 
+        } else if (cellData.pos === 'B') {
+          if (yiq < 50) overlayColor = 'rgba(255,255,255,0.2)';
+        }
+      }
+    }
+
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+
+    if (overlayColor) {
+      ctx.fillStyle = overlayColor;
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+
+    if (cellData?.pos) {
+      ctx.fillStyle = textColor;
+      ctx.fillText(cellData.pos, rect.x + rect.w/2, rect.y + rect.h/2);
+    }
+
+    if (isMagicSelected && isCardActive && target === 'pattern') {
+      ctx.fillStyle = 'rgba(234, 179, 8, 0.4)';
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+    }
+  }, [getCellRect]);
+
+  // Draw the grid
   useEffect(() => {
     const canvas = baseCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    // Clear
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    const currentGrid = pattern.grid || {};
 
-    // Draw Top-Left empty header
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
+    const needsFullRedraw = 
+      !prevGridRef.current || 
+      prevWidthRef.current !== width || 
+      prevHeightRef.current !== height ||
+      prevMagicRef.current !== magicSelection ||
+      prevActiveRef.current !== isActive;
 
-    // Draw Column Headers
-    ctx.font = 'bold 10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    for (let c = 1; c <= width; c++) {
-      const colName = getColName(c);
-      const rect = getCellRect(c, 1);
-      
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
-      
-      ctx.fillStyle = '#1e293b';
-      ctx.fillText(colName, rect.x + rect.w/2, HEADER_ROW_H/2);
-    }
+    if (needsFullRedraw) {
+      // Clear
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Draw Row Headers
-    for (let r = 1; r <= height; r++) {
-      const rect = getCellRect(1, r);
+      // Draw Headers
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(0, rect.y, HEADER_COL_W, rect.h);
-      
-      ctx.fillStyle = '#1e293b';
-      ctx.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
-    }
+      for (let c = 1; c <= width; c++) {
+        const rect = getCellRect(c, 1);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(getColName(c), rect.x + rect.w/2, HEADER_ROW_H/2);
+      }
 
-    // Draw Grid Cells
-    for (let c = 1; c <= width; c++) {
       for (let r = 1; r <= height; r++) {
-        const coord = `${getColName(c)}${r}`;
-        const cellData = pattern.grid[coord];
-        const rect = getCellRect(c, r);
+        const rect = getCellRect(1, r);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(0, rect.y, HEADER_COL_W, rect.h);
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
+      }
 
-        let bgColor = '#e2e8f0';
-        let textColor = '#64748b';
-        let overlayColor = null;
-
-        if (cellData) {
-          bgColor = cellData.color;
-          
-          let hex = cellData.color || '#ffffff';
-          if (hex.startsWith('#') && hex.length === 7) {
-            let rHex = parseInt(hex.substring(1, 3), 16);
-            let gHex = parseInt(hex.substring(3, 5), 16);
-            let bHex = parseInt(hex.substring(5, 7), 16);
-            let yiq = ((rHex * 299) + (gHex * 587) + (bHex * 114)) / 1000;
-            
-            textColor = (yiq >= 128) ? '#0f172a' : 'white';
-            
-            if (cellData.pos === 'J') {
-              // Jika Gelap, buat warna terang menjadi sedikit lebih gelap (jangan terlalu abu)
-              if (yiq >= 50) overlayColor = 'rgba(0,0,0,0.15)'; 
-            } else if (cellData.pos === 'B') {
-              // Jika Terang, buat warna gelap (seperti hitam) menjadi sedikit lebih terang
-              if (yiq < 50) overlayColor = 'rgba(255,255,255,0.2)';
-            }
+      // Draw all cells
+      for (let c = 1; c <= width; c++) {
+        for (let r = 1; r <= height; r++) {
+          const coord = `${getColName(c)}${r}`;
+          const isMagicSelected = magicSelection?.includes(coord);
+          drawCell(ctx, c, r, currentGrid[coord], isMagicSelected, isActive, magicSelectionTarget);
+        }
+      }
+    } else {
+      // Delta rendering
+      const prevGrid = prevGridRef.current;
+      
+      // Check for updated or new cells
+      for (const coord in currentGrid) {
+        if (currentGrid[coord] !== prevGrid[coord]) {
+          const isMagicSelected = magicSelection?.includes(coord);
+          const [colStr, rowStr] = coord.match(/([A-Z]+)(\d+)/).slice(1);
+          let c = 0;
+          for (let i = 0; i < colStr.length; i++) {
+            c = c * 26 + (colStr.charCodeAt(i) - 64);
           }
+          const r = parseInt(rowStr);
+          drawCell(ctx, c, r, currentGrid[coord], isMagicSelected, isActive, magicSelectionTarget);
         }
-
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-
-        if (overlayColor) {
-          ctx.fillStyle = overlayColor;
-          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        }
-
-        if (cellData?.pos) {
-          ctx.fillStyle = textColor;
-          ctx.fillText(cellData.pos, rect.x + rect.w/2, rect.y + rect.h/2);
-        }
-
-        // Draw magic selection highlight
-        if (magicSelection?.includes(coord) && isActive) {
-          ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'; // Yellow overlay
-          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-          ctx.strokeStyle = '#eab308'; // Yellow bold stroke
-          ctx.lineWidth = 2;
-          ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+      }
+      
+      // Check for removed cells
+      for (const coord in prevGrid) {
+        if (!currentGrid[coord]) {
+          const isMagicSelected = magicSelection?.includes(coord);
+          const [colStr, rowStr] = coord.match(/([A-Z]+)(\d+)/).slice(1);
+          let c = 0;
+          for (let i = 0; i < colStr.length; i++) {
+            c = c * 26 + (colStr.charCodeAt(i) - 64);
+          }
+          const r = parseInt(rowStr);
+          drawCell(ctx, c, r, undefined, isMagicSelected, isActive, magicSelectionTarget);
         }
       }
     }
-  }, [width, height, pattern.grid, magicSelection, isActive]);
+
+    // Update refs
+    prevGridRef.current = currentGrid;
+    prevWidthRef.current = width;
+    prevHeightRef.current = height;
+    prevMagicRef.current = magicSelection;
+    prevActiveRef.current = isActive;
+  }, [width, height, pattern.grid, magicSelection, magicSelectionTarget, isActive, drawCell, canvasWidth, canvasHeight]);
 
   const drawHoverCanvas = useCallback((centerCol, centerRow) => {
     const canvas = hoverCanvasRef.current;
@@ -227,9 +276,9 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
              newSelection.push(`${getColName(c)}${r}`);
           }
         }
-        setMagicSelection(newSelection);
+        setMagicSelection(newSelection, 'pattern');
       } else if (activeTool !== 'magic-wand' && activeTool !== 'select') {
-        paintCell(pattern.id, getColName(coord.col), coord.row);
+        paintCell(pattern.id, getColName(coord.col), coord.row, 'pattern');
       }
     }
   }, [isActive, calculateGridCoord, drawHoverCanvas, paintCell, pattern.id, activeTool, setMagicSelection]);
@@ -239,9 +288,18 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
     lastHoveredRef.current = null;
   }, [setHoveredCoord]);
 
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      endStroke();
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [endStroke]);
+
   const handleGridMouseUp = useCallback(() => {
     dragStartRef.current = null;
-  }, []);
+    endStroke();
+  }, [endStroke]);
 
   const handleGridMouseDown = useCallback((e) => {
     if (!isActive) {
@@ -253,14 +311,14 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
     
     if (activeTool === 'select') {
       dragStartRef.current = coord;
-      setMagicSelection([`${getColName(coord.col)}${coord.row}`]);
+      setMagicSelection([`${getColName(coord.col)}${coord.row}`], 'pattern');
     } else if (activeTool === 'magic-wand') {
-      selectMagicWand(pattern.id, getColName(coord.col), coord.row);
+      selectMagicWand(pattern.id, getColName(coord.col), coord.row, 'pattern');
     } else {
-      saveHistory(); // Save history before starting to paint
-      paintCell(pattern.id, getColName(coord.col), coord.row);
+      startStroke(pattern.id); // Save history before starting to paint
+      paintCell(pattern.id, getColName(coord.col), coord.row, 'pattern');
     }
-  }, [isActive, calculateGridCoord, saveHistory, paintCell, pattern.id, activeTool, selectMagicWand, setMagicSelection, setToolState]);
+  }, [isActive, calculateGridCoord, startStroke, paintCell, pattern.id, activeTool, selectMagicWand, setMagicSelection, setToolState]);
 
   return (
     <div className="card" style={{ 

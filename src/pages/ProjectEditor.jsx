@@ -1,70 +1,153 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProjectById, updateProjectData } from '../utils/firebaseUtils'
+import { getProjectById, updateProjectData, subscribeToProject, hasPendingUpdates } from '../utils/firebaseUtils'
 import { useProjectStore } from '../store/projectStore'
-import { ArrowLeft, Save, Plus } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Play, CheckCircle2, Share2, RotateCcw, Download } from 'lucide-react'
 
 import PatternCard from '../components/PatternCard'
 import TransitionCard from '../components/TransitionCard'
 import ToolsPanel from '../components/ToolsPanel'
-import ExportEngine from '../components/ExportEngine'
+import ShareModal from '../components/ShareModal'
+import RecoveryModal from '../components/RecoveryModal'
+import LiveCursors from '../components/LiveCursors'
 
-export default function ProjectEditor() {
+export default function ProjectEditor({ user }) {
   const { id } = useParams()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
+
+  const showToast = (msg) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(''), 2000)
+  }
   
   const store = useProjectStore()
   const { projectData, patterns, initProject, zoomLevel, undo, redo } = store
-  const saveTimeoutRef = useRef(null)
-  const [saveStatus, setSaveStatus] = useState('Tersimpan')
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false)
+
+  // Access Control Logic
+  const isOwner = user?.uid === projectData?.userId;
+  const sharedWithUser = projectData?.sharedWith?.[user?.email];
+  const isEditor = isOwner || sharedWithUser?.role === 'editor' || projectData?.sharingSettings?.mode === 'link_editor';
+  const isViewer = !isEditor && (sharedWithUser?.role === 'viewer' || projectData?.sharingSettings?.mode === 'link_viewer');
+
+  // Real-time listener for project data
+  useEffect(() => {
+    const unsubscribe = subscribeToProject(id, (newData) => {
+      const currentStore = useProjectStore.getState();
+
+      // If projectData is not yet loaded, initialize it normally.
+      // But actually, loadProject() does this too, so they might race.
+      // To be safe, if we haven't loaded it, we use initProject.
+      if (!currentStore.projectData || currentStore.projectData.id !== id) {
+        currentStore.initProject(newData);
+      } else {
+        // For real-time updates from other users, ONLY update patterns and projectData
+        // DO NOT reset activePatternId, zoomLevel, selectedColor, etc.
+        // Reconstruct the array from patternsMap if it exists (Delta Updates Architecture)
+        let serverPatterns = null;
+        if (newData.patternsMap && newData.patternOrder) {
+          serverPatterns = newData.patternOrder.map(id => newData.patternsMap[id]);
+        } else if (newData.patterns) {
+          serverPatterns = newData.patterns;
+        }
+
+        if (serverPatterns) {
+          // If we have pending local updates, we don't overwrite local patterns with incoming server data 
+          // because it would wipe out our unsaved drawing for a split second (flicker).
+          // Once our updates are flushed, the server will confirm them and trigger a new snapshot.
+          if (hasPendingUpdates()) {
+            currentStore.setToolState({ projectData: newData });
+          } else {
+            currentStore.setToolState({ 
+              patterns: serverPatterns,
+              projectData: newData 
+            });
+          }
+        } else {
+           currentStore.setToolState({ projectData: newData });
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [id]);
 
   useEffect(() => {
     loadProject()
   }, [id])
 
-  // Auto-Save Effect
+  // Auto-Backup Check Effect (Runs every 1 minute to see if 15 mins passed)
   useEffect(() => {
-    if (!projectData) return;
+    if (!projectData || !isOwner) return; // Only owner performs auto backup to prevent duplicates
     
-    setSaveStatus('Menyimpan...')
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await updateProjectData(id, { patterns })
-        setSaveStatus('Tersimpan')
-      } catch (e) {
-        console.error(e)
-        setSaveStatus('Gagal menyimpan')
+    const interval = setInterval(() => {
+      const lastBackupTime = projectData.lastBackupAt ? (typeof projectData.lastBackupAt.toMillis === 'function' ? projectData.lastBackupAt.toMillis() : 0) : 0;
+      const now = Date.now();
+      
+      if (now - lastBackupTime > 15 * 60 * 1000) {
+        // If 15 minutes have passed, trigger backup using the CURRENT patterns state
+        const currentPatterns = useProjectStore.getState().patterns;
+        if (currentPatterns && currentPatterns.length > 0) {
+          import('../utils/firebaseUtils').then(({ createBackup }) => {
+            createBackup(id, currentPatterns, "Auto Backup");
+          });
+        }
       }
-    }, 2000)
+    }, 60000); // Check every minute
 
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-    }
-  }, [patterns])
+    return () => clearInterval(interval);
+  }, [id, isOwner, projectData]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+      const currentState = useProjectStore.getState();
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
-          redo();
+          currentState.redo();
         } else {
-          undo();
+          currentState.undo();
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (currentState.activeTool === 'select' || currentState.activeTool === 'magic-wand') {
+          e.preventDefault();
+          currentState.copySelection();
+          window.dispatchEvent(new Event('copy-flash'));
+          showToast('Tersalin ke Clipboard!');
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (currentState.activeTool === 'select' || currentState.activeTool === 'magic-wand') {
+          e.preventDefault();
+          currentState.pasteSelection();
+          window.dispatchEvent(new Event('paste-flash'));
+          showToast('Berhasil dipaste!');
         }
       }
     };
 
+    const handleShowToast = (e) => {
+      showToast(e.detail);
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+    window.addEventListener('show-toast', handleShowToast);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('show-toast', handleShowToast);
+    };
+  }, []);
 
   const loadProject = async () => {
     try {
@@ -80,30 +163,37 @@ export default function ProjectEditor() {
   }
 
   const handleBack = async () => {
-    const confirmSave = window.confirm("Simpan perubahan terakhir dan kembali ke dashboard?")
-    if (confirmSave) {
-      try {
-        setSaving(true)
-        setSaveStatus('Menyimpan...')
-        await updateProjectData(id, { patterns })
-        setSaveStatus('Tersimpan')
-        navigate('/dashboard')
-      } catch (e) {
-        console.error(e)
-        alert("Gagal menyimpan projek ke database. Silakan periksa koneksi internet Anda. Anda tidak bisa kembali agar data tidak hilang.")
-      } finally {
-        setSaving(false)
+    // Delta updates handle real-time saving. We just need to wait if there's a sync in progress.
+    if (hasPendingUpdates()) {
+      setSaving(true)
+      
+      // Wait up to 3 seconds for sync to finish
+      let attempts = 0;
+      while (hasPendingUpdates() && attempts < 15) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        attempts++;
       }
+      setSaving(false)
     }
+    navigate('/dashboard')
   }
 
   if (loading || !projectData) {
     return <div className="app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading Editor...</div>
   }
 
+  if (!isOwner && !isEditor && !isViewer) {
+    return (
+      <div className="app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+        <h2>Akses Ditolak</h2>
+        <p>Anda tidak memiliki akses ke projek ini.</p>
+        <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>Kembali ke Dashboard</button>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container" style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      
       {/* Header */}
       <header style={{ 
         backgroundColor: 'var(--surface)', padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
@@ -121,41 +211,101 @@ export default function ProjectEditor() {
                 fontSize: '0.75rem', 
                 padding: '2px 6px', 
                 borderRadius: '12px', 
-                backgroundColor: saveStatus === 'Gagal menyimpan' ? '#fee2e2' : 'var(--border-color)',
-                color: saveStatus === 'Gagal menyimpan' ? '#ef4444' : 'var(--text-muted)'
+                backgroundColor: 'var(--border-color)',
+                color: 'var(--text-muted)'
               }}>
-                {saveStatus}
+                Disinkronkan secara Real-Time
               </span>
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <ExportEngine projectData={projectData} patterns={patterns} />
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {isOwner && (
+            <>
+              <button className="btn btn-outline" onClick={() => setShowRecoveryModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: '#ef4444', color: '#ef4444' }}>
+                <RotateCcw size={16} /> Recovery
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowShareModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Share2 size={16} /> Bagikan
+              </button>
+            </>
+          )}
+          <button 
+            className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#3b82f6' }}
+            onClick={() => navigate(`/project/${id}/simulation`)}
+          >
+            <Play size={18} fill="currentColor" /> Simulasi
+          </button>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => navigate(`/project/${id}/export`)}
+            title="Buka Halaman Export (Cetak & Kolase)"
+          >
+            <Download size={18} /> Export Desain (ZIP / Kolase)
+          </button>
         </div>
       </header>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'var(--success)',
+          color: 'white',
+          padding: '0.5rem 1rem',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          zIndex: 9999,
+          animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+        }}>
+          <CheckCircle2 size={18} />
+          {toastMessage}
+        </div>
+      )}
 
       {/* Main Editor Area */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-color)', overflow: 'hidden' }}>
         
         {/* Tools Panel */}
-        <div style={{ padding: '1rem 2rem 0 2rem' }}>
-          <ToolsPanel projectData={projectData} />
-        </div>
+        {isEditor && (
+          <div style={{ padding: '1rem 2rem 0 2rem' }}>
+            <ToolsPanel projectData={projectData} />
+          </div>
+        )}
+
+        {isViewer && !isEditor && (
+          <div style={{ padding: '1rem', backgroundColor: '#fef9c3', color: '#854d0e', textAlign: 'center', fontSize: '0.875rem' }}>
+            Anda dalam mode <strong>View Only</strong>. Anda tidak dapat melakukan perubahan.
+          </div>
+        )}
 
         {/* Canvas Area */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '2rem' }}>
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '2rem',
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: 'top left',
-            willChange: 'transform',
-            backfaceVisibility: 'hidden',
-            WebkitBackfaceVisibility: 'hidden',
-            width: 'max-content'
-          }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '2rem', pointerEvents: isEditor ? 'auto' : 'none' }}>
+          <div 
+            id="canvas-content-wrapper"
+            style={{ 
+              position: 'relative',
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '2rem',
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: 'top left',
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              width: 'max-content'
+            }}>
+            
+            <LiveCursors projectId={id} currentUser={user} zoomLevel={zoomLevel} />
+            
             <style>{`
               .insert-divider {
                 height: 24px;
@@ -212,20 +362,29 @@ export default function ProjectEditor() {
               </React.Fragment>
             ))}
 
-            {/* Add Pattern at End */}
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center' }}>
-              <button 
-                className="btn btn-outline" 
-                style={{ padding: '1rem 4rem', fontSize: '1.1rem', borderRadius: '8px', borderStyle: 'dashed', borderWidth: '2px', display: 'flex', alignItems: 'center' }} 
-                onClick={() => store.addPattern(patterns.length)}
-              >
-                <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
-              </button>
-            </div>
+            {isEditor && (
+              <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center' }}>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ padding: '1rem 4rem', fontSize: '1.1rem', borderRadius: '8px', borderStyle: 'dashed', borderWidth: '2px', display: 'flex', alignItems: 'center', pointerEvents: 'auto' }} 
+                  onClick={() => store.addPattern(patterns.length)}
+                >
+                  <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
       </main>
+
+      {showShareModal && (
+        <ShareModal projectData={projectData} onClose={() => setShowShareModal(false)} showToast={showToast} />
+      )}
+      
+      {showRecoveryModal && (
+        <RecoveryModal projectData={projectData} patterns={patterns} onClose={() => setShowRecoveryModal(false)} showToast={showToast} />
+      )}
     </div>
   )
 }

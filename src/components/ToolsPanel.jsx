@@ -1,11 +1,31 @@
 import React from 'react'
 import { useProjectStore } from '../store/projectStore'
-import { Paintbrush, Eraser, Settings2, Plus, ZoomIn, ZoomOut, Undo, Redo, Wand2, Edit3, Pointer } from 'lucide-react'
+import { Paintbrush, Eraser, Settings2, Plus, ZoomIn, ZoomOut, Undo, Redo, Wand2, Edit3, Pointer, Copy, ClipboardPaste } from 'lucide-react'
 
 export default function ToolsPanel({ projectData }) {
   const store = useProjectStore()
-  const { activeTool, selectedColor, selectedPosition, selectedTransitionStep, patterns, activePatternId, zoomLevel, setZoomLevel, brushSize, past, future, undo, redo, magicSelection } = store
+  const { activeTool, selectedColor, selectedPosition, selectedTransitionStep, patterns, activePatternId, zoomLevel, setZoomLevel, brushSize, past, future, undo, redo, magicSelection, copySelection, pasteSelection, clipboardData } = store
   const { colors, positions, hasTransition, transitionSteps } = projectData
+
+  const [flashCopy, setFlashCopy] = React.useState(false)
+  const [flashPaste, setFlashPaste] = React.useState(false)
+
+  React.useEffect(() => {
+    const handleCopyFlash = () => {
+      setFlashCopy(true)
+      setTimeout(() => setFlashCopy(false), 200)
+    }
+    const handlePasteFlash = () => {
+      setFlashPaste(true)
+      setTimeout(() => setFlashPaste(false), 200)
+    }
+    window.addEventListener('copy-flash', handleCopyFlash)
+    window.addEventListener('paste-flash', handlePasteFlash)
+    return () => {
+      window.removeEventListener('copy-flash', handleCopyFlash)
+      window.removeEventListener('paste-flash', handlePasteFlash)
+    }
+  }, [])
 
   return (
     <div className="card glass" style={{ marginBottom: '1.5rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -35,17 +55,7 @@ export default function ToolsPanel({ projectData }) {
           <Paintbrush size={18} />
         </button>
         
-        <button 
-          className={`btn ${activeTool === 'eraser' ? 'btn-primary' : 'btn-outline'}`}
-          onClick={() => {
-            store.setToolState({ activeTool: 'eraser' })
-            if (magicSelection?.length > 0) store.clearMagicSelection()
-          }}
-          title="Eraser (Penghapus)&#10;Menghapus warna dari kotak menjadi kosong."
-          style={{ padding: '0.6rem' }}
-        >
-          <Eraser size={18} />
-        </button>
+
 
         <button 
           className={`btn ${activeTool === 'magic-wand' ? 'btn-primary' : 'btn-outline'}`}
@@ -58,18 +68,49 @@ export default function ToolsPanel({ projectData }) {
           <Wand2 size={18} />
         </button>
 
-        {hasTransition && (
-          <button 
-            className={`btn ${activeTool === 'transition-brush' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => {
-              store.setToolState({ activeTool: 'transition-brush' })
-              if (magicSelection?.length > 0) store.clearMagicSelection()
-            }}
-            title="Brush Transisi&#10;Memberikan angka step aba-aba untuk urutan gerak."
-            style={{ padding: '0.6rem' }}
-          >
-            <Settings2 size={18} />
-          </button>
+        {/* Copy / Paste */}
+        {(activeTool === 'select' || activeTool === 'magic-wand') && (
+          <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+            <button
+              className="btn btn-outline"
+              disabled={!magicSelection || magicSelection.length === 0}
+              onClick={() => {
+                copySelection()
+                window.dispatchEvent(new Event('copy-flash'))
+                window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Tersalin ke Clipboard!' }))
+              }}
+              style={{ 
+                padding: '0.6rem', 
+                opacity: (!magicSelection || magicSelection.length === 0) ? 0.5 : 1,
+                backgroundColor: flashCopy ? 'var(--primary)' : 'transparent',
+                color: flashCopy ? 'white' : 'inherit',
+                transition: 'background-color 0.1s'
+              }}
+              title="Copy (Ctrl+C)"
+            >
+              <Copy size={18} />
+            </button>
+            
+            <button
+              className="btn btn-outline"
+              disabled={!clipboardData || (!magicSelection || magicSelection.length === 0)}
+              onClick={() => {
+                pasteSelection()
+                window.dispatchEvent(new Event('paste-flash'))
+                window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Berhasil dipaste!' }))
+              }}
+              style={{ 
+                padding: '0.6rem', 
+                opacity: (!clipboardData || !magicSelection || magicSelection.length === 0) ? 0.5 : 1,
+                backgroundColor: flashPaste ? 'var(--success)' : 'transparent',
+                color: flashPaste ? 'white' : 'inherit',
+                transition: 'background-color 0.1s'
+              }}
+              title="Paste (Ctrl+V)"
+            >
+              <ClipboardPaste size={18} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -134,49 +175,49 @@ export default function ToolsPanel({ projectData }) {
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Transition Brush Settings */}
-      {activeTool === 'transition-brush' && (
-        <div style={{ marginLeft: 'auto' }}>
-          <p style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Step Transisi</p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {Array.from({ length: transitionSteps }, (_, i) => i + 1).map(step => (
-              <button
-                key={step}
-                className={`btn ${selectedTransitionStep === step ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => {
-                  store.setToolState({ selectedTransitionStep: step })
-                  if (magicSelection?.length > 0) {
-                    store.saveHistory()
-                    store.fillMagicSelectionTransition(step)
-                  }
-                }}
-                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-              >
-                Step {step}
-              </button>
-            ))}
-          </div>
+          {hasTransition && (
+            <div>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Step Transisi</p>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {Array.from({ length: transitionSteps }, (_, i) => i + 1).map(step => (
+                  <button
+                    key={step}
+                    className={`btn ${selectedTransitionStep === step ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => {
+                      store.setToolState({ selectedTransitionStep: step })
+                      if (magicSelection?.length > 0) {
+                        store.saveHistory()
+                        store.fillMagicSelectionTransition(step)
+                      }
+                    }}
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                  >
+                    Step {step}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Brush Size */}
-      <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '2rem', marginLeft: (activeTool !== 'transition-brush' && activeTool !== 'brush' && activeTool !== 'select' && activeTool !== 'magic-wand') ? 'auto' : '0' }}>
-        <p style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Ukuran Brush</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <input 
-            type="range" 
-            min="1" 
-            max="20" 
-            value={brushSize} 
-            onChange={(e) => store.setToolState({ brushSize: parseInt(e.target.value) })}
-            style={{ width: '80px' }}
-          />
-          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{brushSize}x{brushSize}</span>
+      {activeTool === 'brush' && (
+        <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '2rem' }}>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Ukuran Brush</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input 
+              type="range" 
+              min="1" 
+              max="20" 
+              value={brushSize} 
+              onChange={(e) => store.setToolState({ brushSize: parseInt(e.target.value) })}
+              style={{ width: '80px' }}
+            />
+            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{brushSize}x{brushSize}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* History Controls */}
       <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '2rem', marginLeft: '0' }}>

@@ -2,15 +2,17 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase'
 import { signOut } from 'firebase/auth'
-import { getProjects, createProject } from '../utils/firebaseUtils'
+import { getProjects, createProject, getSharedProjects } from '../utils/firebaseUtils'
 import ProjectForm from '../components/ProjectForm'
 import { Plus, LogOut, FileImage } from 'lucide-react'
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate()
   const [projects, setProjects] = useState([])
+  const [sharedProjects, setSharedProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [activeTab, setActiveTab] = useState('my-projects') // 'my-projects' | 'shared'
 
   useEffect(() => {
     loadProjects()
@@ -18,8 +20,14 @@ export default function Dashboard({ user }) {
 
   const loadProjects = async () => {
     try {
+      setLoading(true)
       const data = await getProjects(user.uid)
       setProjects(data)
+      
+      if (user.email) {
+        const sharedData = await getSharedProjects(user.email)
+        setSharedProjects(sharedData)
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -60,8 +68,21 @@ export default function Dashboard({ user }) {
       </header>
 
       <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Projek Saya</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button 
+              className={`btn ${activeTab === 'my-projects' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setActiveTab('my-projects')}
+            >
+              Projek Saya
+            </button>
+            <button 
+              className={`btn ${activeTab === 'shared' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setActiveTab('shared')}
+            >
+              Dibagikan ke Saya
+            </button>
+          </div>
           <button className="btn btn-primary" onClick={() => setShowForm(true)}>
             <Plus size={18} /> Buat Projek
           </button>
@@ -69,16 +90,20 @@ export default function Dashboard({ user }) {
 
         {loading ? (
           <p>Loading projects...</p>
-        ) : projects.length === 0 ? (
+        ) : activeTab === 'my-projects' && projects.length === 0 ? (
           <div className="card glass" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>Belum ada projek yang dibuat.</p>
             <button className="btn btn-primary" onClick={() => setShowForm(true)}>
               Buat Projek Pertama Anda
             </button>
           </div>
+        ) : activeTab === 'shared' && sharedProjects.length === 0 ? (
+          <div className="card glass" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+            <p style={{ color: 'var(--text-muted)' }}>Belum ada projek yang dibagikan ke Anda.</p>
+          </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-            {projects.map(project => (
+            {(activeTab === 'my-projects' ? projects : sharedProjects).map(project => (
               <div 
                 key={project.id} 
                 className="card" 

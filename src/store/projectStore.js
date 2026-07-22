@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { queueDeltaUpdate } from '../utils/firebaseUtils'
 
 // Helper to generate coordinates (A1, B1, AA1, etc.)
 export const getColName = (n) => {
@@ -19,15 +20,20 @@ export const getColIndex = (name) => {
   return idx;
 }
 
-const generateDefaultPattern = (id, name, width, height, color, pos, hasTransition) => {
+const generateDefaultPattern = (id, name, width, height, colors, positions, hasTransition) => {
   const grid = {};
   const transitions = {};
+  
+  const randomColor = colors && colors.length > 0 ? colors[Math.floor(Math.random() * colors.length)] : null;
+  let randomPos = positions && positions.length > 0 ? positions[Math.floor(Math.random() * positions.length)] : null;
+  if (randomPos === 'jongkok') randomPos = 'J';
+  else if (randomPos === 'berdiri') randomPos = 'B';
   
   for (let c = 1; c <= width; c++) {
     const colStr = getColName(c);
     for (let r = 1; r <= height; r++) {
       const coord = `${colStr}${r}`;
-      grid[coord] = { color, pos };
+      grid[coord] = { color: randomColor, pos: randomPos };
       if (hasTransition) {
         transitions[coord] = { step: 1 };
       }
@@ -58,10 +64,26 @@ export const useProjectStore = create((set, get) => ({
     const defaultColor = data.colors[0];
     const defaultPos = data.positions.includes('berdiri') ? 'B' : 'J';
     
-    let initialPatterns = data.patterns;
-    if (!initialPatterns || initialPatterns.length === 0) {
+    let initialPatterns = [];
+    if (data.patternsMap && data.patternOrder) {
+      initialPatterns = data.patternOrder.map(id => data.patternsMap[id]);
+    } else if (data.patterns && data.patterns.length > 0) {
+      initialPatterns = data.patterns;
+    } else {
       initialPatterns = [generateDefaultPattern(Date.now(), 'Pola 1 - Untitled', data.width, data.height, defaultColor, defaultPos, data.hasTransition)];
     }
+
+    const canvasWidth = 42 + (data.width * 32);
+    const canvasHeight = 32 + (data.height * 32);
+    
+    const availableWidth = window.innerWidth > 768 ? window.innerWidth - 400 : window.innerWidth - 50;
+    const availableHeight = window.innerHeight - 300;
+
+    const totalRequiredWidth = data.hasTransition ? (canvasWidth * 2 + 50) : canvasWidth;
+    
+    let initialZoom = Math.min(availableWidth / totalRequiredWidth, availableHeight / canvasHeight, 1);
+    initialZoom = Math.floor(initialZoom * 100) / 100;
+    if (initialZoom < 0.1) initialZoom = 0.1;
 
     set({
       projectData: data,
@@ -73,48 +95,140 @@ export const useProjectStore = create((set, get) => ({
       activeTool: 'brush',
       hoveredCoord: null,
       magicSelection: [],
-      zoomLevel: 1,
+      magicSelectionTarget: 'pattern',
+      clipboardData: null,
+      zoomLevel: initialZoom,
       brushSize: 1,
       past: [],
-      future: []
+      future: [],
+      currentStroke: null
     })
   },
 
-  saveHistory: () => set((state) => {
-    const maxHistory = 30; // Limit history to prevent excessive memory usage
-    const clonedPatterns = JSON.parse(JSON.stringify(state.patterns));
-    const newPast = [...state.past, clonedPatterns];
+  startStroke: (patternId) => set((state) => {
+    return {
+      currentStroke: { patternId, deltas: {} }
+    }
+  }),
+
+  endStroke: () => set((state) => {
+    if (!state.currentStroke || Object.keys(state.currentStroke.deltas).length === 0) {
+      return { currentStroke: null };
+    }
+    const maxHistory = 30; // Limit history
+    const newPast = [...state.past, state.currentStroke];
     if (newPast.length > maxHistory) {
       newPast.shift(); // Remove oldest
     }
     return {
       past: newPast,
-      future: [] // Clear future when a new action is performed
+      future: [], // Clear future when a new action is performed
+      currentStroke: null
     }
   }),
 
   undo: () => set((state) => {
     if (state.past.length === 0) return state;
     
-    const previous = state.past[state.past.length - 1];
+    const stroke = state.past[state.past.length - 1];
     const newPast = state.past.slice(0, state.past.length - 1);
     
+    const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
+    if (patternIndex === -1) return state; // Pattern no longer exists
+
+    const newPatterns = [...state.patterns];
+    const pattern = { ...newPatterns[patternIndex] };
+    const newGrid = { ...pattern.grid };
+    const newTransitions = { ...pattern.transitions };
+    
+    const firebaseDeltas = {};
+
+    for (const coord in stroke.deltas) {
+      const { old: oldVal, target } = stroke.deltas[coord];
+      
+      if (target === 'pattern') {
+        if (oldVal) {
+          newGrid[coord] = oldVal;
+          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = oldVal;
+        } else {
+          delete newGrid[coord];
+          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null; // Send null to delete from Firestore map
+        }
+      } else if (target === 'transition') {
+        if (oldVal) {
+          newTransitions[coord] = oldVal;
+          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = oldVal;
+        } else {
+          delete newTransitions[coord];
+          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
+        }
+      }
+    }
+    
+    pattern.grid = newGrid;
+    pattern.transitions = newTransitions;
+    newPatterns[patternIndex] = pattern;
+
+    if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, firebaseDeltas);
+    }
+
     return {
       past: newPast,
-      patterns: previous,
-      future: [JSON.parse(JSON.stringify(state.patterns)), ...state.future]
+      patterns: newPatterns,
+      future: [stroke, ...state.future]
     }
   }),
 
   redo: () => set((state) => {
     if (state.future.length === 0) return state;
     
-    const next = state.future[0];
+    const stroke = state.future[0];
     const newFuture = state.future.slice(1);
     
+    const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
+    if (patternIndex === -1) return state;
+
+    const newPatterns = [...state.patterns];
+    const pattern = { ...newPatterns[patternIndex] };
+    const newGrid = { ...pattern.grid };
+    const newTransitions = { ...pattern.transitions };
+    
+    const firebaseDeltas = {};
+
+    for (const coord in stroke.deltas) {
+      const { new: newVal, target } = stroke.deltas[coord];
+      
+      if (target === 'pattern') {
+        if (newVal) {
+          newGrid[coord] = newVal;
+          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = newVal;
+        } else {
+          delete newGrid[coord];
+          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null;
+        }
+      } else if (target === 'transition') {
+        if (newVal) {
+          newTransitions[coord] = newVal;
+          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = newVal;
+        } else {
+          delete newTransitions[coord];
+          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
+        }
+      }
+    }
+    
+    pattern.grid = newGrid;
+    pattern.transitions = newTransitions;
+    newPatterns[patternIndex] = pattern;
+
+    if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, firebaseDeltas);
+    }
+
     return {
-      past: [...state.past, JSON.parse(JSON.stringify(state.patterns))],
-      patterns: next,
+      past: [...state.past, stroke],
+      patterns: newPatterns,
       future: newFuture
     }
   }),
@@ -125,14 +239,14 @@ export const useProjectStore = create((set, get) => ({
 
   addPattern: (indexToInsert = null) => set((state) => {
     const newId = state.patterns.length > 0 ? Math.max(...state.patterns.map(p => p.id)) + 1 : 1;
-    const { width, height, hasTransition } = state.projectData;
+    const { width, height, hasTransition, colors, positions } = state.projectData;
     const newPattern = generateDefaultPattern(
       newId, 
       `Untitled`, 
       width, 
       height, 
-      state.selectedColor, 
-      state.selectedPosition, 
+      colors, 
+      positions, 
       hasTransition
     );
     
@@ -143,6 +257,13 @@ export const useProjectStore = create((set, get) => ({
       newPatterns.push(newPattern);
     }
     
+    if (state.projectData?.id) {
+      queueDeltaUpdate(state.projectData.id, {
+        [`patternsMap.${newId}`]: newPattern,
+        patternOrder: newPatterns.map(p => p.id)
+      });
+    }
+
     return {
       patterns: newPatterns,
       activePatternId: newId
@@ -153,6 +274,11 @@ export const useProjectStore = create((set, get) => ({
     const newPatterns = state.patterns.map(p => 
       p.id === id ? { ...p, name: newName } : p
     );
+    if (state.projectData?.id) {
+      queueDeltaUpdate(state.projectData.id, {
+        [`patternsMap.${id}.name`]: newName
+      });
+    }
     return { patterns: newPatterns };
   }),
 
@@ -165,6 +291,8 @@ export const useProjectStore = create((set, get) => ({
     newPatterns[index - 1] = newPatterns[index];
     newPatterns[index] = temp;
     
+    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newPatterns.map(p => p.id) });
+
     return { patterns: newPatterns, activePatternId: id };
   }),
 
@@ -177,11 +305,13 @@ export const useProjectStore = create((set, get) => ({
     newPatterns[index + 1] = newPatterns[index];
     newPatterns[index] = temp;
     
+    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newPatterns.map(p => p.id) });
+
     return { patterns: newPatterns, activePatternId: id };
   }),
 
   // Action to paint a cell on the grid
-  paintCell: (patternId, colStr, rowNum) => set((state) => {
+  paintCell: (patternId, colStr, rowNum, target = 'pattern') => set((state) => {
     const patternIndex = state.patterns.findIndex(p => p.id === patternId)
     if (patternIndex === -1) return state
 
@@ -193,6 +323,7 @@ export const useProjectStore = create((set, get) => ({
 
     const newGrid = { ...pattern.grid }
     const newTransitions = { ...pattern.transitions }
+    const deltas = {}
 
     // Calculate centered bounds
     const colOffsetLeft = Math.floor((state.brushSize - 1) / 2)
@@ -215,15 +346,42 @@ export const useProjectStore = create((set, get) => ({
 
         const coord = `${getColName(c)}${r}`
 
-        if (state.activeTool === 'eraser') {
-          delete newGrid[coord]
-          delete newTransitions[coord]
-        } else if (state.activeTool === 'brush') {
-          newGrid[coord] = { color: state.selectedColor, pos: state.selectedPosition }
-        } else if (state.activeTool === 'transition-brush' && state.projectData?.hasTransition) {
-          newTransitions[coord] = { step: state.selectedTransitionStep }
+        if (state.activeTool === 'brush') {
+          if (target === 'pattern') {
+            const oldVal = newGrid[coord] ? { ...newGrid[coord] } : null;
+            const newVal = { color: state.selectedColor, pos: state.selectedPosition };
+            
+            newGrid[coord] = newVal;
+            deltas[`patternsMap.${patternId}.grid.${coord}`] = newVal;
+            
+            if (state.currentStroke && state.currentStroke.patternId === patternId) {
+              if (!state.currentStroke.deltas[coord]) {
+                state.currentStroke.deltas[coord] = { old: oldVal, new: newVal, target: 'pattern' };
+              } else {
+                state.currentStroke.deltas[coord].new = newVal;
+              }
+            }
+          } else if (target === 'transition' && state.projectData?.hasTransition) {
+            const oldVal = newTransitions[coord] ? { ...newTransitions[coord] } : null;
+            const newVal = { step: state.selectedTransitionStep };
+            
+            newTransitions[coord] = newVal;
+            deltas[`patternsMap.${patternId}.transitions.${coord}`] = newVal;
+            
+            if (state.currentStroke && state.currentStroke.patternId === patternId) {
+              if (!state.currentStroke.deltas[coord]) {
+                state.currentStroke.deltas[coord] = { old: oldVal, new: newVal, target: 'transition' };
+              } else {
+                state.currentStroke.deltas[coord].new = newVal;
+              }
+            }
+          }
         }
       }
+    }
+
+    if (state.projectData?.id && Object.keys(deltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, deltas);
     }
 
     pattern.grid = newGrid
@@ -235,17 +393,165 @@ export const useProjectStore = create((set, get) => ({
 
   // Magic Selection / Select logic
   clearMagicSelection: () => set({ magicSelection: [] }),
-  setMagicSelection: (selection) => set({ magicSelection: selection }),
+  setMagicSelection: (selection, target = 'pattern') => set({ magicSelection: selection, magicSelectionTarget: target }),
   
-  selectMagicWand: (patternId, colStr, rowNum) => set((state) => {
+  copySelection: () => set((state) => {
+    if (!state.magicSelection || state.magicSelection.length === 0) return state;
+    
+    const pattern = state.patterns.find(p => p.id === state.activePatternId);
+    if (!pattern) return state;
+
+    let minColIdx = Infinity;
+    let minRow = Infinity;
+
+    state.magicSelection.forEach(coord => {
+      const match = coord.match(/^([A-Z]+)(\d+)$/);
+      if (match) {
+        const colStr = match[1];
+        const r = parseInt(match[2]);
+        const cIdx = getColIndex(colStr);
+        if (cIdx < minColIdx) minColIdx = cIdx;
+        if (r < minRow) minRow = r;
+      }
+    });
+
+    const clipboardCells = [];
+    state.magicSelection.forEach(coord => {
+      const match = coord.match(/^([A-Z]+)(\d+)$/);
+      if (match) {
+        const colStr = match[1];
+        const r = parseInt(match[2]);
+        const cIdx = getColIndex(colStr);
+        
+        let cellData = null;
+        if (state.magicSelectionTarget === 'pattern') {
+          cellData = pattern.grid?.[coord] || null;
+        } else if (state.magicSelectionTarget === 'transition') {
+          cellData = pattern.transitions?.[coord] || { step: 1 };
+        }
+
+        clipboardCells.push({
+          dCol: cIdx - minColIdx,
+          dRow: r - minRow,
+          cellData: cellData ? JSON.parse(JSON.stringify(cellData)) : null
+        });
+      }
+    });
+
+    return { 
+      clipboardData: { 
+        target: state.magicSelectionTarget, 
+        cells: clipboardCells 
+      } 
+    };
+  }),
+
+  pasteSelection: () => set((state) => {
+    if (!state.clipboardData || !state.clipboardData.cells || state.clipboardData.cells.length === 0) return state;
+    if (state.clipboardData.target !== state.magicSelectionTarget) {
+      // alert or silently ignore if pasting pattern to transition
+      return state;
+    }
+    
+    if (!state.magicSelection || state.magicSelection.length === 0) return state;
+
+    const patternIndex = state.patterns.findIndex(p => p.id === state.activePatternId);
+    if (patternIndex === -1) return state;
+
+    // We will push to history after processing paste
+    let minColIdx = Infinity;
+    let minRow = Infinity;
+
+    state.magicSelection.forEach(coord => {
+      const match = coord.match(/^([A-Z]+)(\d+)$/);
+      if (match) {
+        const colStr = match[1];
+        const r = parseInt(match[2]);
+        const cIdx = getColIndex(colStr);
+        if (cIdx < minColIdx) minColIdx = cIdx;
+        if (r < minRow) minRow = r;
+      }
+    });
+
+    const newPatterns = [...state.patterns];
+    const newPattern = { ...newPatterns[patternIndex] };
+    
+    if (state.clipboardData.target === 'pattern') {
+      newPattern.grid = { ...(newPattern.grid || {}) };
+    } else {
+      newPattern.transitions = { ...(newPattern.transitions || {}) };
+    }
+
+    const firebaseDeltas = {};
+    const strokeDeltas = {};
+
+    state.clipboardData.cells.forEach(item => {
+      const targetColIdx = minColIdx + item.dCol;
+      const targetRow = minRow + item.dRow;
+      
+      if (targetColIdx >= 1 && targetColIdx <= state.projectData.width && targetRow >= 1 && targetRow <= state.projectData.height) {
+        const targetCoord = `${getColName(targetColIdx)}${targetRow}`;
+        if (state.clipboardData.target === 'pattern') {
+          const oldVal = newPattern.grid[targetCoord] ? { ...newPattern.grid[targetCoord] } : null;
+          
+          if (item.cellData) {
+            newPattern.grid[targetCoord] = JSON.parse(JSON.stringify(item.cellData));
+            firebaseDeltas[`patternsMap.${pattern.id}.grid.${targetCoord}`] = item.cellData;
+            strokeDeltas[targetCoord] = { old: oldVal, new: item.cellData, target: 'pattern' };
+          } else {
+            delete newPattern.grid[targetCoord];
+            firebaseDeltas[`patternsMap.${pattern.id}.grid.${targetCoord}`] = null;
+            strokeDeltas[targetCoord] = { old: oldVal, new: null, target: 'pattern' };
+          }
+        } else {
+          const oldVal = newPattern.transitions[targetCoord] ? { ...newPattern.transitions[targetCoord] } : null;
+          
+          if (item.cellData) {
+            newPattern.transitions[targetCoord] = JSON.parse(JSON.stringify(item.cellData));
+            firebaseDeltas[`patternsMap.${pattern.id}.transitions.${targetCoord}`] = item.cellData;
+            strokeDeltas[targetCoord] = { old: oldVal, new: item.cellData, target: 'transition' };
+          } else {
+            delete newPattern.transitions[targetCoord];
+            firebaseDeltas[`patternsMap.${pattern.id}.transitions.${targetCoord}`] = null;
+            strokeDeltas[targetCoord] = { old: oldVal, new: null, target: 'transition' };
+          }
+        }
+      }
+    });
+
+    if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, firebaseDeltas);
+    }
+
+    newPatterns[patternIndex] = newPattern;
+    
+    const stroke = { patternId: pattern.id, deltas: strokeDeltas };
+    const maxHistory = 30;
+    const newPast = [...state.past, stroke];
+    if (newPast.length > maxHistory) newPast.shift();
+
+    return { patterns: newPatterns, past: newPast, future: [] };
+  }),
+  
+  selectMagicWand: (patternId, colStr, rowNum, target = 'pattern') => set((state) => {
     const pattern = state.patterns.find(p => p.id === patternId);
     if (!pattern) return state;
 
     const { width, height } = state.projectData;
     const startCoord = `${colStr}${rowNum}`;
-    const startCell = pattern.grid[startCoord];
-    const targetColor = startCell ? startCell.color : null;
-    const targetPos = startCell ? startCell.pos : null;
+    
+    let targetColor = null;
+    let targetPos = null;
+    let targetStep = null;
+    
+    if (target === 'pattern') {
+      const startCell = pattern.grid?.[startCoord];
+      targetColor = startCell ? startCell.color : null;
+      targetPos = startCell ? startCell.pos : null;
+    } else {
+      const startCell = pattern.transitions?.[startCoord];
+      targetStep = startCell ? startCell.step : null;
+    }
     
     // Flood fill (BFS)
     const queue = [{ c: getColIndex(colStr), r: rowNum }];
@@ -269,10 +575,20 @@ export const useProjectStore = create((set, get) => ({
         if (n.c >= 1 && n.c <= width && n.r >= 1 && n.r <= height) {
           const nCoord = `${getColName(n.c)}${n.r}`;
           if (!visited.has(nCoord)) {
-            const nCell = pattern.grid[nCoord];
-            const nColor = nCell ? nCell.color : null;
-            const nPos = nCell ? nCell.pos : null;
-            if (nColor === targetColor && nPos === targetPos) {
+            let isMatch = false;
+            
+            if (target === 'pattern') {
+              const nCell = pattern.grid?.[nCoord];
+              const nColor = nCell ? nCell.color : null;
+              const nPos = nCell ? nCell.pos : null;
+              isMatch = (nColor === targetColor && nPos === targetPos);
+            } else {
+              const nCell = pattern.transitions?.[nCoord];
+              const nStep = nCell ? nCell.step : null;
+              isMatch = (nStep === targetStep);
+            }
+
+            if (isMatch) {
               visited.add(nCoord);
               queue.push(n);
             }
@@ -281,7 +597,7 @@ export const useProjectStore = create((set, get) => ({
       }
     }
     
-    return { magicSelection: selection };
+    return { magicSelection: selection, magicSelectionTarget: target };
   }),
 
   fillMagicSelection: (color, pos) => set((state) => {
@@ -293,16 +609,33 @@ export const useProjectStore = create((set, get) => ({
     const newPatterns = [...state.patterns];
     const pattern = { ...newPatterns[patternIndex] };
     const newGrid = { ...pattern.grid };
+    const firebaseDeltas = {};
+    const strokeDeltas = {};
 
     for (const coord of state.magicSelection) {
-      newGrid[coord] = { color, pos };
+      const oldVal = newGrid[coord] ? { ...newGrid[coord] } : null;
+      const newVal = { color, pos };
+      newGrid[coord] = newVal;
+      firebaseDeltas[`patternsMap.${pattern.id}.grid.${coord}`] = newVal;
+      strokeDeltas[coord] = { old: oldVal, new: newVal, target: 'pattern' };
+    }
+
+    if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, firebaseDeltas);
     }
 
     pattern.grid = newGrid;
     newPatterns[patternIndex] = pattern;
     
+    const stroke = { patternId: pattern.id, deltas: strokeDeltas };
+    const maxHistory = 30;
+    const newPast = [...state.past, stroke];
+    if (newPast.length > maxHistory) newPast.shift();
+
     return { 
-      patterns: newPatterns
+      patterns: newPatterns,
+      past: newPast,
+      future: []
     };
   }),
 
@@ -315,16 +648,33 @@ export const useProjectStore = create((set, get) => ({
     const newPatterns = [...state.patterns];
     const pattern = { ...newPatterns[patternIndex] };
     const newTransitions = { ...pattern.transitions };
+    const firebaseDeltas = {};
+    const strokeDeltas = {};
 
     for (const coord of state.magicSelection) {
-      newTransitions[coord] = { step };
+      const oldVal = newTransitions[coord] ? { ...newTransitions[coord] } : null;
+      const newVal = { step };
+      newTransitions[coord] = newVal;
+      firebaseDeltas[`patternsMap.${pattern.id}.transitions.${coord}`] = newVal;
+      strokeDeltas[coord] = { old: oldVal, new: newVal, target: 'transition' };
+    }
+
+    if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
+      queueDeltaUpdate(state.projectData.id, firebaseDeltas);
     }
 
     pattern.transitions = newTransitions;
     newPatterns[patternIndex] = pattern;
     
+    const stroke = { patternId: pattern.id, deltas: strokeDeltas };
+    const maxHistory = 30;
+    const newPast = [...state.past, stroke];
+    if (newPast.length > maxHistory) newPast.shift();
+
     return { 
-      patterns: newPatterns
+      patterns: newPatterns,
+      past: newPast,
+      future: []
     };
   }),
   

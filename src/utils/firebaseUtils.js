@@ -1,13 +1,54 @@
 import { db } from '../firebase'
-import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, serverTimestamp, onSnapshot, setDoc, orderBy, limit } from 'firebase/firestore'
 
 export const createProject = async (userId, projectData) => {
   try {
+    const colors = projectData.colors && projectData.colors.length > 0 ? projectData.colors : ['#ffffff'];
+    const positions = projectData.positions && projectData.positions.length > 0 ? projectData.positions : ['J'];
+    const hasTransition = projectData.hasTransition || false;
+
+    const grid = {};
+    const transitions = {};
+
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    let randomPos = positions[Math.floor(Math.random() * positions.length)];
+    if (randomPos === 'jongkok') randomPos = 'J';
+    else if (randomPos === 'berdiri') randomPos = 'B';
+
+    for (let c = 1; c <= projectData.width; c++) {
+      let colStr = '';
+      let temp = c;
+      while (temp > 0) {
+        let m = (temp - 1) % 26;
+        colStr = String.fromCharCode(65 + m) + colStr;
+        temp = Math.floor((temp - m) / 26);
+      }
+      for (let r = 1; r <= projectData.height; r++) {
+        const coord = `${colStr}${r}`;
+        grid[coord] = { color: randomColor, pos: randomPos };
+        if (hasTransition) {
+          transitions[coord] = { step: 1 };
+        }
+      }
+    }
+
+    const defaultPattern = {
+      id: 1,
+      name: 'Pola 1 - Untitled',
+      grid,
+      transitions
+    };
+
     const docRef = await addDoc(collection(db, 'projects'), {
       userId,
       ...projectData,
+      patternsMap: { 1: defaultPattern },
+      patternOrder: [1],
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      sharingSettings: { mode: 'restricted' }, // 'restricted', 'link_viewer', 'link_editor'
+      sharedEmails: [],
+      sharedWith: {} // email -> { role: 'editor' | 'viewer' }
     })
     return docRef.id
   } catch (e) {
@@ -58,3 +99,164 @@ export const updateProjectData = async (projectId, updateData) => {
     throw e
   }
 }
+
+// ==========================================
+// DELTA UPDATES & BATCHING
+// ==========================================
+
+let pendingUpdates = {};
+let isFlushing = false;
+
+export const queueDeltaUpdate = (projectId, updates) => {
+  // Merge new updates into the pending queue
+  pendingUpdates = { ...pendingUpdates, ...updates };
+
+  if (isFlushing) return; // If a batch is already scheduled, don't schedule another
+
+  const flushQueue = () => {
+    isFlushing = true;
+    setTimeout(async () => {
+      if (Object.keys(pendingUpdates).length === 0) {
+        isFlushing = false;
+        return;
+      }
+
+      const dataToSend = { ...pendingUpdates };
+      pendingUpdates = {}; // Clear queue immediately
+      
+      try {
+        const docRef = doc(db, 'projects', projectId);
+        await updateDoc(docRef, {
+          ...dataToSend,
+          updatedAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Error flushing delta updates:", e);
+        window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Sync Error: ' + e.message }));
+      } finally {
+        isFlushing = false; // Mark as done AFTER Firestore confirms
+        
+        // If user queued more updates while we were flushing, trigger next batch immediately
+        if (Object.keys(pendingUpdates).length > 0) {
+          flushQueue();
+        }
+      }
+    }, 1000); // 1-second batching window
+  };
+
+  flushQueue();
+}
+
+export const getPendingUpdates = () => {
+  return { ...pendingUpdates };
+}
+
+export const hasPendingUpdates = () => {
+  return Object.keys(pendingUpdates).length > 0 || isFlushing;
+}
+
+// ==========================================
+// COLLABORATION & REAL-TIME
+// ==========================================
+
+export const subscribeToProject = (projectId, callback) => {
+  const docRef = doc(db, 'projects', projectId);
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const data = { id: docSnap.id, ...docSnap.data() };
+      
+      // Auto-migrate legacy patterns array to patternsMap & patternOrder
+      if (data.patterns && Array.isArray(data.patterns) && !data.patternsMap) {
+        const patternsMap = {};
+        const patternOrder = [];
+        data.patterns.forEach(p => {
+          patternsMap[p.id] = p;
+          patternOrder.push(p.id);
+        });
+        
+        // Push migration silently to Firestore
+        updateDoc(docRef, { patternsMap, patternOrder });
+        
+        // Provide migrated structure to callback
+        data.patternsMap = patternsMap;
+        data.patternOrder = patternOrder;
+        delete data.patterns;
+      }
+      
+      callback(data);
+    }
+  });
+};
+
+export const updateCursor = async (projectId, userId, cursorData) => {
+  if (!userId) return;
+  const cursorRef = doc(db, `projects/${projectId}/cursors`, userId);
+  await setDoc(cursorRef, {
+    ...cursorData,
+    updatedAt: serverTimestamp()
+  });
+};
+
+export const subscribeToCursors = (projectId, callback) => {
+  const cursorsRef = collection(db, `projects/${projectId}/cursors`);
+  return onSnapshot(cursorsRef, (snapshot) => {
+    const cursors = {};
+    snapshot.forEach((docSnap) => {
+      cursors[docSnap.id] = docSnap.data();
+    });
+    callback(cursors);
+  });
+};
+
+export const getSharedProjects = async (email) => {
+  if (!email) return [];
+  try {
+    const q = query(collection(db, 'projects'), where('sharedEmails', 'array-contains', email));
+    const querySnapshot = await getDocs(q);
+    const projects = [];
+    querySnapshot.forEach((doc) => {
+      projects.push({ id: doc.id, ...doc.data() });
+    });
+    return projects.sort((a, b) => b.updatedAt?.toMillis() - a.updatedAt?.toMillis());
+  } catch (e) {
+    console.error("Error getting shared projects: ", e);
+    return [];
+  }
+};
+
+// ==========================================
+// RECOVERY MODE (BACKUPS)
+// ==========================================
+
+export const createBackup = async (projectId, patterns, description = "Auto Backup") => {
+  try {
+    const backupsRef = collection(db, `projects/${projectId}/backups`);
+    await addDoc(backupsRef, {
+      patterns,
+      description,
+      createdAt: serverTimestamp()
+    });
+    
+    // Update lastBackupAt in project
+    await updateDoc(doc(db, 'projects', projectId), {
+      lastBackupAt: serverTimestamp()
+    });
+  } catch (e) {
+    console.error("Error creating backup: ", e);
+  }
+};
+
+export const getBackups = async (projectId) => {
+  try {
+    const q = query(collection(db, `projects/${projectId}/backups`), orderBy('createdAt', 'desc'), limit(20));
+    const querySnapshot = await getDocs(q);
+    const backups = [];
+    querySnapshot.forEach((doc) => {
+      backups.push({ id: doc.id, ...doc.data() });
+    });
+    return backups;
+  } catch (e) {
+    console.error("Error getting backups: ", e);
+    return [];
+  }
+};

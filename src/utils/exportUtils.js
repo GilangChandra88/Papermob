@@ -11,7 +11,7 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
     
     const leftPanelW = 600;
     const width = leftPanelW + (cols * colWidth);
-    const height = 1240; // Fixed height (A4 Landscape height)
+    const height = 1320; // 1240 (original) + 80px (~2cm gap)
 
     canvas.width = width;
     canvas.height = height;
@@ -25,7 +25,7 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(leftPanelW, 0);
-    ctx.lineTo(leftPanelW, height);
+    ctx.lineTo(leftPanelW, 1240); // Stop at the new bottom gap line
     ctx.stroke();
 
     // ==========================================
@@ -56,24 +56,42 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
     ctx.fillText('Kode', 40, 170);
     ctx.fillText('Pola', 40, 200);
 
-    // Draw pattern box
-    ctx.lineWidth = 3;
-    ctx.strokeRect(30, 240, 60, 200);
-    ctx.font = 'bold 30px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('1', 60, 280);
-    ctx.fillText('2', 60, 340);
-    ctx.fillText('3', 60, 410);
+    const hasTrans = projectData.hasTransition !== false;
+    const hasPos = projectData.hasPosition !== false;
+    const exampleColors = projectData.colors && projectData.colors.length > 0 ? projectData.colors : ['#ef4444', '#ffffff', '#f97316'];
+    
+    let exampleTexts = [];
+    if (hasTrans && hasPos) exampleTexts = ['1B', '2J', '3B'];
+    else if (hasTrans && !hasPos) exampleTexts = ['1', '2', '3'];
+    else if (!hasTrans && hasPos) exampleTexts = ['B', 'J', 'B'];
+    else exampleTexts = ['', '', ''];
 
-    // Draw diagram lines and text
-    ctx.beginPath();
-    ctx.moveTo(90, 280);
-    ctx.lineTo(130, 280);
-    ctx.moveTo(90, 340);
-    ctx.lineTo(130, 340);
-    ctx.moveTo(90, 410);
-    ctx.lineTo(130, 410);
-    ctx.stroke();
+    const numExamples = hasTrans ? Math.min(3, projectData.transitionSteps || 3) : 1;
+    const yCoords = [280, 345, 410];
+
+    // Draw pattern box
+    if (hasTrans) {
+      ctx.lineWidth = 3;
+      const boxHeight = (numExamples * 65) + 15;
+      ctx.strokeRect(30, 240, 60, boxHeight);
+      
+      for (let i = 0; i < numExamples; i++) {
+        const y = yCoords[i];
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText((i + 1).toString(), 60, y);
+        
+        ctx.beginPath();
+        ctx.moveTo(90, y);
+        ctx.lineTo(130, y);
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(90, 280);
+      ctx.lineTo(130, 280);
+      ctx.stroke();
+    }
 
     // Draw example circles
     const drawCircle = (x, y, color, text, textColor = '#ffffff') => {
@@ -92,21 +110,33 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
       ctx.fillText(text, x, y + 2);
     };
 
-    drawCircle(170, 280, '#ef4444', '1B'); // Red
-    drawCircle(170, 340, '#ffffff', '1B', '#000000'); // White
-    drawCircle(170, 410, '#f97316', '1J'); // Orange
+    for (let i = 0; i < numExamples; i++) {
+       const y = yCoords[i];
+       const color = exampleColors[i % exampleColors.length];
+       
+       let rHex = parseInt(color.substring(1, 3), 16) || 255;
+       let gHex = parseInt(color.substring(3, 5), 16) || 255;
+       let bHex = parseInt(color.substring(5, 7), 16) || 255;
+       if (color === '#ffffff' || color === '#FFFFFF') { rHex = 255; gHex = 255; bHex = 255; }
+       
+       let yiq = ((rHex * 299) + (gHex * 587) + (bHex * 114)) / 1000;
+       const textColor = (yiq >= 128) ? '#000000' : '#ffffff';
+
+       drawCircle(170, y, color, exampleTexts[i], textColor);
+    }
 
     // Explanations
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText('Warna Yang Akan', 220, 265);
-    ctx.fillText('Diangkat', 220, 295);
+    ctx.fillText('Warna Yang Akan', 220, yCoords[0] - 15);
+    ctx.fillText('Diangkat', 220, yCoords[0] + 15);
 
-    ctx.fillText('Dengarkan Aba-Aba!', 220, 370);
-    ctx.fillText('Angkat Warna', 220, 400);
-    ctx.fillText('Sesuai Angka', 220, 430);
-    ctx.fillText('Ketukannya', 220, 460);
+    if (hasTrans && numExamples >= 2) {
+      ctx.fillText('Dengarkan Aba-Aba!', 220, yCoords[1] + 10);
+      ctx.fillText('Angkat Warna', 220, yCoords[1] + 40);
+      ctx.fillText('Sesuai Angka', 220, yCoords[1] + 70);
+    }
 
     // 3. Legend Box
     ctx.beginPath();
@@ -162,7 +192,7 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
       else if (colorName === '#F97316') colorName = 'Orange';
       else if (colorName === '#3B82F6') colorName = 'Biru';
       else if (colorName === '#EAB308') colorName = 'Kuning';
-      else if (colorName === '#22C55E') colorName = 'Hijau';
+      else if (colorName === '#22C55E' || colorName === '#10B981') colorName = 'Hijau';
 
       ctx.fillText(colorName, xOffset + 35, yOffset + 2);
     }
@@ -174,16 +204,20 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
     ctx.fillText('Langkah Aba Aba Dari Operator', 40, 930);
 
     ctx.font = '18px Arial';
-    const steps = [
-      "1. Kode xxx / Perhatikan Warna dan Angkanya!",
-      "2. Siap / Mulai Dengarkan Aba Aba!",
-      "3. Satu !! / Warna Dengan Angka 1 Bergerak!",
-      "4. Dua !! / Warna Dengan Angka 2 Bergerak!",
-      "5. Tiga !! / Warna Dengan Angka 3 Bergerak!",
-      "6. Empat !! / Warna Dengan Angka 4 Bergerak!",
-      "7. Lima !! / Warna Dengan Angka 5 Bergerak!",
-      "8. Enam !! / Warna Dengan Angka 6 Bergerak!"
-    ];
+    let steps = [];
+    if (hasTrans) {
+      steps.push("1. Kode xxx / Perhatikan Warna dan Angkanya!");
+      steps.push("2. Siap / Mulai Dengarkan Aba Aba!");
+      const stepWords = ["Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh"];
+      const tSteps = projectData.transitionSteps || 1;
+      for (let i = 0; i < tSteps; i++) {
+        steps.push(`${i + 3}. ${stepWords[i]} !! / Warna Dengan Angka ${i + 1} Bergerak!`);
+      }
+    } else {
+      steps.push("1. Kode xxx / Perhatikan Warna!");
+      steps.push("2. Siap / Mulai!");
+      steps.push("3. Action !! / Angkat Kertas Bersamaan!");
+    }
 
     steps.forEach((step, idx) => {
       ctx.fillText(step, 40, 970 + (idx * 30));
@@ -193,16 +227,24 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
     // RIGHT PANEL (Dynamic Grid)
     // ==========================================
 
-    const bottomFooterH = 100;
+    const bottomFooterH = 180; // (1320 - 180 = 1140) preserves original grid height
     ctx.beginPath();
     ctx.moveTo(leftPanelW, height - bottomFooterH);
     ctx.lineTo(width, height - bottomFooterH);
     ctx.stroke();
 
-    ctx.font = 'bold 45px Arial';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('KODE PAPER MOB', width - 50, height - 50);
+    // Draw horizontal border for the extra bottom gap
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 1240); 
+    ctx.lineTo(width, 1240);
+    ctx.stroke();
+
+    // Draw hole punch circle vertically centered in the 80px gap (1240 to 1320)
+    ctx.beginPath();
+    ctx.arc(width / 2, 1280, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#000000';
+    ctx.fill();
 
     const availableHeight = height - bottomFooterH;
     const rowHeight = availableHeight / maxRows;
@@ -251,22 +293,15 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
       const circleX = cellX + 105;
       const circleY = cellY + (cellH / 2);
       
-      if (cellData && cellData.pos) {
+      if (cellData && (cellData.pos || cellData.color)) {
         let textColor = '#ffffff';
         let hex = cellData.color || '#ffffff';
-        let overlayColor = null;
         if (hex.startsWith('#') && hex.length === 7) {
           let rHex = parseInt(hex.substring(1, 3), 16);
           let gHex = parseInt(hex.substring(3, 5), 16);
           let bHex = parseInt(hex.substring(5, 7), 16);
           let yiq = ((rHex * 299) + (gHex * 587) + (bHex * 114)) / 1000;
           textColor = (yiq >= 128) ? '#000000' : '#ffffff';
-          
-          if (cellData.pos === 'J') {
-            if (yiq >= 50) overlayColor = 'rgba(0,0,0,0.15)'; 
-          } else if (cellData.pos === 'B') {
-            if (yiq < 50) overlayColor = 'rgba(255,255,255,0.2)';
-          }
         }
 
         // Draw Base Circle
@@ -274,14 +309,7 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
         ctx.arc(circleX, circleY, 35, 0, Math.PI * 2);
         ctx.fillStyle = cellData.color;
         ctx.fill();
-        
-        // Draw Overlay if needed
-        if (overlayColor) {
-          ctx.beginPath();
-          ctx.arc(circleX, circleY, 35, 0, Math.PI * 2);
-          ctx.fillStyle = overlayColor;
-          ctx.fill();
-        }
+
 
         // Draw Stroke
         ctx.lineWidth = 3;
@@ -297,10 +325,11 @@ export const generateCanvasImage = (coord, patterns, projectData) => {
         
         // If there's a transition step, format like "1B" or "1J". If no transition, just "B" or "J"
         let actionText = '';
-        if (transData && transData.step) {
-          actionText = `${transData.step}${cellData.pos}`;
-        } else {
-          actionText = cellData.pos;
+        if (transData && transData.step && hasTrans) {
+          actionText += transData.step;
+        }
+        if (cellData.pos && hasPos) {
+          actionText += cellData.pos;
         }
 
         ctx.fillText(actionText, circleX, circleY + 2);

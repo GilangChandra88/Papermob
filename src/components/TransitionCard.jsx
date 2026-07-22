@@ -1,16 +1,19 @@
-import React, { memo, useMemo, useCallback, useRef, useEffect, Fragment } from 'react'
+import React, { memo, useMemo, useCallback, useRef, useEffect, useState, Fragment } from 'react'
 import { useProjectStore, getColName, getColIndex } from '../store/projectStore'
+import { Play, Square } from 'lucide-react'
 
 export default memo(function TransitionCard({ pattern, index, projectData }) {
   const { width, height, transitionSteps } = projectData
   const paintCell = useProjectStore(state => state.paintCell)
   const saveHistory = useProjectStore(state => state.saveHistory)
+  const patterns = useProjectStore(state => state.patterns)
   const activePatternId = useProjectStore(state => state.activePatternId)
   const brushSize = useProjectStore(state => state.brushSize)
   const activeTool = useProjectStore(state => state.activeTool)
   const magicSelection = useProjectStore(state => state.magicSelection)
   const selectMagicWand = useProjectStore(state => state.selectMagicWand)
   const setMagicSelection = useProjectStore(state => state.setMagicSelection)
+  const magicSelectionTarget = useProjectStore(state => state.magicSelectionTarget)
   const hoveredCoord = useProjectStore(state => state.hoveredCoord)
   const setHoveredCoord = useProjectStore(state => state.setHoveredCoord)
   const setToolState = useProjectStore(state => state.setToolState)
@@ -20,7 +23,60 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
   const lastHoveredRef = useRef(null)
   const dragStartRef = useRef(null)
 
+  const [isSimulating, setIsSimulating] = useState(false)
+  const [simStep, setSimStep] = useState(0)
+  
+  const animationsRef = useRef(new Map())
+  const animFrameRef = useRef(null)
+
   const isActive = activePatternId === pattern.id
+
+  const previousPattern = useMemo(() => {
+    if (index === 0) return null;
+    return patterns[index - 1];
+  }, [patterns, index]);
+
+  useEffect(() => {
+    let timer;
+    if (isSimulating) {
+      if (simStep <= transitionSteps) {
+        timer = setTimeout(() => {
+          setSimStep(s => s + 1);
+        }, 2000);
+      } else {
+        // Auto stop after finishing
+        timer = setTimeout(() => {
+          setIsSimulating(false);
+          setSimStep(0);
+        }, 2000);
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isSimulating, simStep, transitionSteps]);
+
+  // Populate animations when simStep changes
+  useEffect(() => {
+    if (!isSimulating || simStep === 0) {
+      animationsRef.current.clear();
+    } else if (simStep > 0 && simStep <= transitionSteps) {
+      const now = Date.now();
+      for (let c = 1; c <= width; c++) {
+        for (let r = 1; r <= height; r++) {
+          const coord = `${getColName(c)}${r}`;
+          const step = pattern.transitions?.[coord]?.step || 1;
+          
+          if (step === simStep) {
+            animationsRef.current.set(coord, {
+              startT: now,
+              delay: Math.random() * 400,
+              fromData: previousPattern ? previousPattern.grid?.[coord] : null,
+              toData: pattern.grid?.[coord]
+            });
+          }
+        }
+      }
+    }
+  }, [simStep, isSimulating, width, height, pattern, previousPattern, transitionSteps]);
 
   const CELL_SIZE = 30;
   const GAP = 2;
@@ -43,76 +99,144 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     return `hsl(210, 80%, ${lightness}%)`;
   }
 
-  // Draw the entire base grid
+  // Draw the entire base grid (and animation loop)
   useEffect(() => {
     const canvas = baseCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    // Clear
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Draw Top-Left empty header
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
+    const render = () => {
+      // Clear
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Draw Column Headers
-    ctx.font = 'bold 10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    for (let c = 1; c <= width; c++) {
-      const colName = getColName(c);
-      const rect = getCellRect(c, 1);
+      // Draw Top-Left empty header
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
+
+      // Draw Column Headers
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
-      
-      ctx.fillStyle = '#1e293b';
-      ctx.fillText(colName, rect.x + rect.w/2, HEADER_ROW_H/2);
-    }
-
-    // Draw Row Headers
-    for (let r = 1; r <= height; r++) {
-      const rect = getCellRect(1, r);
-      
-      ctx.fillStyle = '#f1f5f9';
-      ctx.fillRect(0, rect.y, HEADER_COL_W, rect.h);
-      
-      ctx.fillStyle = '#1e293b';
-      ctx.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
-    }
-
-    // Draw Grid Cells
-    for (let c = 1; c <= width; c++) {
-      for (let r = 1; r <= height; r++) {
-        const coord = `${getColName(c)}${r}`;
-        const transData = pattern.transitions?.[coord];
-        const rect = getCellRect(c, r);
-
-        ctx.fillStyle = getBlueShade(transData?.step);
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      for (let c = 1; c <= width; c++) {
+        const colName = getColName(c);
+        const rect = getCellRect(c, 1);
         
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
+        
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(colName, rect.x + rect.w/2, HEADER_ROW_H/2);
+      }
 
-        if (transData?.step) {
-          ctx.fillStyle = 'white';
-          ctx.fillText(transData.step.toString(), rect.x + rect.w/2, rect.y + rect.h/2);
-        }
+      // Draw Row Headers
+      for (let r = 1; r <= height; r++) {
+        const rect = getCellRect(1, r);
+        
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(0, rect.y, HEADER_COL_W, rect.h);
+        
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
+      }
 
-        // Draw magic selection highlight
-        if (magicSelection?.includes(coord) && isActive) {
-          ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'; // Yellow overlay
-          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-          ctx.strokeStyle = '#eab308'; // Yellow bold stroke
-          ctx.lineWidth = 2;
-          ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+      const now = Date.now();
+
+      // Draw Grid Cells
+      for (let c = 1; c <= width; c++) {
+        for (let r = 1; r <= height; r++) {
+          const coord = `${getColName(c)}${r}`;
+          const transData = pattern.transitions?.[coord];
+          const rect = getCellRect(c, r);
+
+          if (isSimulating) {
+            // Background is always white
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+
+            const anim = animationsRef.current.get(coord);
+            let cellData = null;
+            let drawW = rect.w;
+            let drawX = rect.x;
+
+            if (anim) {
+              const elapsed = now - anim.startT - anim.delay;
+              if (elapsed < 0) {
+                cellData = anim.fromData;
+              } else if (elapsed < 300) {
+                // flipping
+                const progress = elapsed / 300;
+                if (progress < 0.5) {
+                  cellData = anim.fromData;
+                  drawW = rect.w * (1 - progress * 2);
+                } else {
+                  cellData = anim.toData;
+                  drawW = rect.w * ((progress - 0.5) * 2);
+                }
+                drawX = rect.x + (rect.w - drawW) / 2;
+              } else {
+                cellData = anim.toData;
+              }
+            } else {
+              const step = transData?.step || 1;
+              if (step <= simStep) {
+                cellData = pattern.grid?.[coord];
+              } else if (previousPattern) {
+                cellData = previousPattern.grid?.[coord];
+              }
+            }
+
+            if (cellData) {
+              ctx.fillStyle = cellData.color;
+              ctx.fillRect(drawX, rect.y, drawW, rect.h);
+
+              if (cellData.pos === 'J') {
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                ctx.fillRect(drawX, rect.y, drawW, rect.h);
+              }
+            }
+
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+            
+          } else {
+            // Normal View
+            ctx.fillStyle = getBlueShade(transData?.step);
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+
+            if (transData?.step) {
+              ctx.fillStyle = 'white';
+              ctx.fillText(transData.step.toString(), rect.x + rect.w/2, rect.y + rect.h/2);
+            }
+
+            // Draw magic selection highlight
+            if (magicSelection?.includes(coord) && isActive && magicSelectionTarget === 'transition') {
+              ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'; // Yellow overlay
+              ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+              ctx.strokeStyle = '#eab308'; // Yellow bold stroke
+              ctx.lineWidth = 2;
+              ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+            }
+          }
         }
       }
+
+      if (isSimulating) {
+        animFrameRef.current = requestAnimationFrame(render);
+      }
+    };
+
+    render();
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     }
-  }, [width, height, pattern.transitions, transitionSteps, magicSelection, isActive]);
+  }, [width, height, pattern, previousPattern, transitionSteps, magicSelection, magicSelectionTarget, isActive, isSimulating, simStep]);
 
   const drawHoverCanvas = useCallback((centerCol, centerRow) => {
     const canvas = hoverCanvasRef.current;
@@ -198,9 +322,9 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
              newSelection.push(`${getColName(c)}${r}`);
           }
         }
-        setMagicSelection(newSelection);
+        setMagicSelection(newSelection, 'transition');
       } else if (activeTool !== 'magic-wand' && activeTool !== 'select') {
-        paintCell(pattern.id, getColName(coord.col), coord.row);
+        paintCell(pattern.id, getColName(coord.col), coord.row, 'transition');
       }
     }
   }, [isActive, calculateGridCoord, drawHoverCanvas, paintCell, pattern.id, activeTool, setMagicSelection]);
@@ -224,12 +348,12 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     
     if (activeTool === 'select') {
       dragStartRef.current = coord;
-      setMagicSelection([`${getColName(coord.col)}${coord.row}`]);
+      setMagicSelection([`${getColName(coord.col)}${coord.row}`], 'transition');
     } else if (activeTool === 'magic-wand') {
-      selectMagicWand(pattern.id, getColName(coord.col), coord.row);
+      selectMagicWand(pattern.id, getColName(coord.col), coord.row, 'transition');
     } else {
       saveHistory(); // Save history before starting to paint
-      paintCell(pattern.id, getColName(coord.col), coord.row);
+      paintCell(pattern.id, getColName(coord.col), coord.row, 'transition');
     }
   }, [isActive, calculateGridCoord, saveHistory, paintCell, pattern.id, activeTool, selectMagicWand, setMagicSelection, setToolState]);
 
@@ -241,9 +365,51 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
       marginLeft: '1rem',
       cursor: isActive ? 'crosshair' : 'pointer'
     }}>
-      <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem', paddingTop: '0.4rem', userSelect: 'none' }}>
-        Transisi - POLA {index + 1} - {pattern.name.replace(/^Pola \d+(\s*-\s*)?/i, '')}
-      </h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingRight: '1rem' }}>
+        <h3 style={{ fontSize: '1.125rem', paddingTop: '0.4rem', userSelect: 'none', margin: 0 }}>
+          Transisi - POLA {index + 1} - {pattern.name.replace(/^Pola \d+(\s*-\s*)?/i, '')}
+        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {isSimulating && (
+            <div style={{
+              background: 'var(--primary)',
+              color: 'white',
+              padding: '0.4rem 0.75rem',
+              borderRadius: '9999px',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              animation: 'pulse 2s infinite'
+            }}>
+              Operator: {simStep === 0 ? `Siap POLA ${index + 1}!` : `Aba-aba ${simStep}!`}
+            </div>
+          )}
+          <button 
+            className={`btn ${isSimulating ? 'btn-outline' : 'btn-primary'}`}
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isSimulating) {
+                setIsSimulating(false);
+                setSimStep(0);
+              } else {
+                setIsSimulating(true);
+                setSimStep(0);
+              }
+            }}
+          >
+            {isSimulating ? (
+              <>
+                <Square size={16} fill="currentColor" /> Stop
+              </>
+            ) : (
+              <>
+                <Play size={16} fill="currentColor" /> Simulasi
+              </>
+            )}
+          </button>
+        </div>
+      </div>
       
       <div 
         onMouseMove={handleGridMouseMove}
