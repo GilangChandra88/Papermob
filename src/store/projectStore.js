@@ -61,13 +61,13 @@ export const useProjectStore = create((set, get) => ({
   future: [],
 
   initProject: (data) => {
-    const defaultColor = data.colors[0];
-    const defaultPos = data.positions.includes('berdiri') ? 'B' : 'J';
+    const defaultColor = data.colors?.[0] || '#EF4444';
+    const defaultPos = data.positions?.includes('berdiri') ? 'B' : 'J';
     
     let initialPatterns = [];
-    if (data.patternsMap && data.patternOrder) {
+    if (data.patternsMap && Array.isArray(data.patternOrder)) {
       initialPatterns = data.patternOrder.map(id => data.patternsMap[id]).filter(Boolean);
-    } else if (data.patterns && data.patterns.length > 0) {
+    } else if (Array.isArray(data.patterns) && data.patterns.length > 0) {
       initialPatterns = data.patterns.filter(Boolean);
     }
     
@@ -75,8 +75,11 @@ export const useProjectStore = create((set, get) => ({
       initialPatterns = [generateDefaultPattern(Date.now(), 'Pola 1 - Untitled', data.width, data.height, defaultColor, defaultPos, data.hasTransition)];
     }
 
-    const canvasWidth = 42 + (data.width * 32);
-    const canvasHeight = 32 + (data.height * 32);
+    const projectWidth = data.width || 20;
+    const projectHeight = data.height || 20;
+
+    const canvasWidth = 42 + (projectWidth * 32);
+    const canvasHeight = 32 + (projectHeight * 32);
     
     const availableWidth = window.innerWidth > 768 ? window.innerWidth - 400 : window.innerWidth - 50;
     const availableHeight = window.innerHeight - 300;
@@ -282,15 +285,15 @@ export const useProjectStore = create((set, get) => ({
 
   addPattern: (indexToInsert = null) => set((state) => {
     const newId = state.patterns.length > 0 ? Math.max(...state.patterns.map(p => p.id)) + 1 : 1;
-    const { width, height, hasTransition, colors, positions } = state.projectData;
+    const { width, height, hasTransition, colors, positions } = state.projectData || {};
     const newPattern = generateDefaultPattern(
       newId, 
       `Untitled`, 
-      width, 
-      height, 
-      colors, 
-      positions, 
-      hasTransition
+      width || 20, 
+      height || 20, 
+      colors || ['#EF4444'], 
+      positions || ['J'], 
+      hasTransition || false
     );
     
     const previousOrder = state.patterns.map(p => p.id);

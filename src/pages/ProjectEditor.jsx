@@ -50,9 +50,9 @@ export default function ProjectEditor({ user }) {
         // DO NOT reset activePatternId, zoomLevel, selectedColor, etc.
         // Reconstruct the array from patternsMap if it exists (Delta Updates Architecture)
         let serverPatterns = null;
-        if (newData.patternsMap && newData.patternOrder) {
+        if (newData.patternsMap && Array.isArray(newData.patternOrder)) {
           serverPatterns = newData.patternOrder.map(id => newData.patternsMap[id]).filter(Boolean);
-        } else if (newData.patterns) {
+        } else if (Array.isArray(newData.patterns)) {
           serverPatterns = newData.patterns.filter(Boolean);
         }
 
@@ -156,7 +156,7 @@ export default function ProjectEditor({ user }) {
       initProject(data)
     } catch (e) {
       console.error(e)
-      alert("Gagal memuat projek")
+      alert("Gagal memuat projek: " + e.message)
       navigate('/dashboard')
     } finally {
       setLoading(false)
