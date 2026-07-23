@@ -4,13 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBz7RER9q16FnvmM26nXYIsEGnkjATOmR4",
-  authDomain: "papermobweb.firebaseapp.com",
-  projectId: "papermobweb",
-  storageBucket: "papermobweb.firebasestorage.app",
-  messagingSenderId: "16213375375",
-  appId: "1:16213375375:web:af185fd88f79af5aec73fa",
-  measurementId: "G-N55TL4W619"
+  apiKey: "AIzaSyCbW7TUcI8ST0g9Otih7n1gZQxyepXd1n0",
+  authDomain: "papermob-database.firebaseapp.com",
+  projectId: "papermob-database",
+  storageBucket: "papermob-database.firebasestorage.app",
+  messagingSenderId: "1002832159484",
+  appId: "1:1002832159484:web:309d17900a76e36e0c2d79",
+  measurementId: "G-NYLRS3ZLVM"
 };
 
 const app = initializeApp(firebaseConfig);
