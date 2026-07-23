@@ -3,7 +3,7 @@ import { ChevronUp, ChevronDown, Trash2, Copy } from 'lucide-react'
 import { useProjectStore, getColName, getColIndex } from '../store/projectStore'
 import { auth } from '../firebase'
 
-export default memo(function PatternCard({ pattern, index, projectData }) {
+export default memo(function PatternCard({ pattern, index, projectData, onDeleteClick }) {
   const { width, height } = projectData
   const paintCell = useProjectStore(state => state.paintCell)
   const activePatternId = useProjectStore(state => state.activePatternId)
@@ -384,7 +384,9 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
           )}
           {isOwner && (
             <button className="btn btn-outline" onClick={() => {
-              if (window.confirm("Apakah Anda yakin ingin menghapus pola ini?")) {
+              if (onDeleteClick) {
+                onDeleteClick(pattern.id);
+              } else {
                 deletePattern(pattern.id);
               }
             }} style={{ padding: '0.2rem', color: '#ef4444', borderColor: '#ef4444' }} title="Hapus Pola">

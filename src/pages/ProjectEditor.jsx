@@ -27,6 +27,7 @@ export default function ProjectEditor({ user }) {
   const { projectData, patterns, initProject, zoomLevel, undo, redo } = store
   const [showShareModal, setShowShareModal] = useState(false)
   const [showRecoveryModal, setShowRecoveryModal] = useState(false)
+  const [patternToDelete, setPatternToDelete] = useState(null)
 
   // Access Control Logic
   const isOwner = user?.uid === projectData?.userId;
@@ -353,7 +354,12 @@ export default function ProjectEditor({ user }) {
                 )}
                 
                 <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                  <PatternCard pattern={pattern} index={index} projectData={projectData} />
+                  <PatternCard 
+                    pattern={pattern} 
+                    index={index} 
+                    projectData={projectData} 
+                    onDeleteClick={(id) => setPatternToDelete(id)}
+                  />
                   
                   {projectData.hasTransition && (
                     <TransitionCard pattern={pattern} index={index} projectData={projectData} />
@@ -400,6 +406,47 @@ export default function ProjectEditor({ user }) {
       
       {showRecoveryModal && (
         <RecoveryModal projectData={projectData} patterns={patterns} onClose={() => setShowRecoveryModal(false)} showToast={showToast} />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {patternToDelete && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <div className="card glass" style={{ width: '90%', maxWidth: '400px', padding: '2rem', textAlign: 'center', animation: 'slideUp 0.2s ease-out' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--text-main)' }}>Hapus Pola</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
+              Apakah Anda yakin ingin menghapus pola ini beserta transisinya? Tindakan ini dapat dibatalkan dengan tombol Undo.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button 
+                className="btn btn-outline" 
+                onClick={() => setPatternToDelete(null)}
+                style={{ flex: 1 }}
+              >
+                Batal
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => {
+                  store.deletePattern(patternToDelete);
+                  setPatternToDelete(null);
+                  showToast('Pola berhasil dihapus');
+                }}
+                style={{ flex: 1, backgroundColor: '#ef4444', borderColor: '#ef4444' }}
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
