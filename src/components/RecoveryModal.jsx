@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, RotateCcw, Clock, AlertTriangle } from 'lucide-react';
-import { getBackups, updateProjectData, createBackup } from '../utils/firebaseUtils';
+import { getBackups, updateProjectData, createBackup, restoreProject } from '../utils/firebaseUtils';
 
 export default function RecoveryModal({ projectData, patterns, onClose, showToast }) {
   const [backups, setBackups] = useState([]);
@@ -35,7 +35,7 @@ export default function RecoveryModal({ projectData, patterns, onClose, showToas
 
     setRestoring(true);
     try {
-      await updateProjectData(projectData.id, { patterns: backup.patterns });
+      await restoreProject(projectData.id, backup.patterns);
       if (showToast) showToast('Projek berhasil dipulihkan!');
       // Reload window to fetch fresh data
       window.location.reload();

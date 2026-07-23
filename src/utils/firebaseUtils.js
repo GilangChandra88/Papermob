@@ -1,5 +1,5 @@
 import { db } from '../firebase'
-import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, serverTimestamp, onSnapshot, setDoc, orderBy, limit } from 'firebase/firestore'
+import { collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, serverTimestamp, onSnapshot, setDoc, orderBy, limit, writeBatch, deleteField } from 'firebase/firestore'
 
 export const createProject = async (userId, projectData) => {
   try {
@@ -39,18 +39,25 @@ export const createProject = async (userId, projectData) => {
       transitions
     };
 
-    const docRef = await addDoc(collection(db, 'projects'), {
+    const projectRef = doc(collection(db, 'projects'));
+    const patternRef = doc(db, `projects/${projectRef.id}/patterns`, '1');
+    const batch = writeBatch(db);
+
+    batch.set(projectRef, {
       userId,
       ...projectData,
-      patternsMap: { 1: defaultPattern },
       patternOrder: [1],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       sharingSettings: { mode: 'restricted' }, // 'restricted', 'link_viewer', 'link_editor'
       sharedEmails: [],
       sharedWith: {} // email -> { role: 'editor' | 'viewer' }
-    })
-    return docRef.id
+    });
+    
+    batch.set(patternRef, defaultPattern);
+
+    await batch.commit();
+    return projectRef.id;
   } catch (e) {
     console.error("Error adding document: ", e)
     throw e
@@ -100,6 +107,40 @@ export const updateProjectData = async (projectId, updateData) => {
   }
 }
 
+export const restoreProject = async (projectId, backupPatterns) => {
+  try {
+    const batch = writeBatch(db);
+    const projectRef = doc(db, 'projects', projectId);
+    
+    // First, clear existing patterns to ensure no leftover ghost patterns
+    const patternsRef = collection(db, `projects/${projectId}/patterns`);
+    const existingPatterns = await getDocs(patternsRef);
+    existingPatterns.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    
+    // Write the new patterns
+    const patternOrder = [];
+    backupPatterns.forEach(pattern => {
+      if (pattern && pattern.id) {
+        const pRef = doc(db, `projects/${projectId}/patterns`, pattern.id.toString());
+        batch.set(pRef, pattern);
+        patternOrder.push(pattern.id);
+      }
+    });
+    
+    batch.update(projectRef, {
+      patternOrder,
+      updatedAt: serverTimestamp()
+    });
+    
+    await batch.commit();
+  } catch (e) {
+    console.error("Error restoring project: ", e);
+    throw e;
+  }
+}
+
 // ==========================================
 // DELTA UPDATES & BATCHING
 // ==========================================
@@ -125,11 +166,57 @@ export const queueDeltaUpdate = (projectId, updates) => {
       pendingUpdates = {}; // Clear queue immediately
       
       try {
-        const docRef = doc(db, 'projects', projectId);
-        await updateDoc(docRef, {
-          ...dataToSend,
-          updatedAt: serverTimestamp()
-        });
+        const batch = writeBatch(db);
+        const projectRef = doc(db, 'projects', projectId);
+        const projectUpdates = { updatedAt: serverTimestamp() };
+        
+        const patternUpdatesMap = {}; 
+        const patternsToSet = {}; 
+        const patternsToDelete = new Set();
+
+        for (const [key, value] of Object.entries(dataToSend)) {
+          const match = key.match(/^patternsMap\.([^.]+)(?:\.(.*))?$/);
+          
+          if (match) {
+            const patternId = match[1];
+            const restPath = match[2];
+            
+            if (restPath) {
+              if (!patternUpdatesMap[patternId]) patternUpdatesMap[patternId] = {};
+              patternUpdatesMap[patternId][restPath] = value;
+            } else {
+              if (value === null) {
+                patternsToDelete.add(patternId);
+              } else {
+                patternsToSet[patternId] = value;
+              }
+            }
+          } else {
+            projectUpdates[key] = value;
+          }
+        }
+        
+        for (const patternId of patternsToDelete) {
+          const pRef = doc(db, `projects/${projectId}/patterns`, patternId);
+          batch.delete(pRef);
+        }
+        
+        for (const [patternId, fullObj] of Object.entries(patternsToSet)) {
+          const pRef = doc(db, `projects/${projectId}/patterns`, patternId);
+          batch.set(pRef, fullObj, { merge: true });
+        }
+        
+        for (const [patternId, pUpdates] of Object.entries(patternUpdatesMap)) {
+          const pRef = doc(db, `projects/${projectId}/patterns`, patternId);
+          if (!patternsToSet[patternId] && !patternsToDelete.has(patternId)) {
+            // Check if document exists first or use set with merge for dot-notation?
+            // Actually, update will fail if doc doesn't exist, but it should exist.
+            batch.update(pRef, pUpdates);
+          }
+        }
+        
+        batch.update(projectRef, projectUpdates);
+        await batch.commit();
       } catch (e) {
         console.error("Error flushing delta updates:", e);
         window.dispatchEvent(new CustomEvent('show-toast', { detail: 'Sync Error: ' + e.message }));
@@ -161,31 +248,81 @@ export const hasPendingUpdates = () => {
 
 export const subscribeToProject = (projectId, callback) => {
   const docRef = doc(db, 'projects', projectId);
-  return onSnapshot(docRef, (docSnap) => {
+  
+  let projectData = null;
+  let patternsMap = {};
+  
+  const notifyCallback = () => {
+    if (projectData) {
+      callback({
+        ...projectData,
+        patternsMap
+      });
+    }
+  };
+
+  const unsubscribeProject = onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = { id: docSnap.id, ...docSnap.data() };
       
       // Auto-migrate legacy patterns array to patternsMap & patternOrder
       if (data.patterns && Array.isArray(data.patterns) && !data.patternsMap) {
-        const patternsMap = {};
+        const pMap = {};
         const patternOrder = [];
         data.patterns.forEach(p => {
-          patternsMap[p.id] = p;
+          pMap[p.id] = p;
           patternOrder.push(p.id);
         });
         
-        // Push migration silently to Firestore
-        updateDoc(docRef, { patternsMap, patternOrder });
-        
-        // Provide migrated structure to callback
-        data.patternsMap = patternsMap;
+        // Let the next migration block handle moving it to subcollections
+        data.patternsMap = pMap;
         data.patternOrder = patternOrder;
         delete data.patterns;
       }
-      
-      callback(data);
+
+      // Auto-migrate monolithic patternsMap to subcollections
+      if (data.patternsMap) {
+        const batch = writeBatch(db);
+        Object.values(data.patternsMap).forEach(pattern => {
+          if (pattern && pattern.id) {
+            const pRef = doc(db, `projects/${projectId}/patterns`, pattern.id.toString());
+            batch.set(pRef, pattern);
+          }
+        });
+        
+        batch.update(docRef, { 
+          patternsMap: deleteField(),
+          patterns: deleteField() 
+        });
+        
+        batch.commit().catch(e => console.error("Migration error:", e));
+      }
+
+      delete data.patternsMap; 
+      projectData = data;
+      notifyCallback();
     }
   });
+
+  const patternsRef = collection(db, `projects/${projectId}/patterns`);
+  const unsubscribePatterns = onSnapshot(patternsRef, (snapshot) => {
+    const newPatternsMap = { ...patternsMap };
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === 'added' || change.type === 'modified') {
+        newPatternsMap[change.doc.id] = change.doc.data();
+      }
+      if (change.type === 'removed') {
+        delete newPatternsMap[change.doc.id];
+      }
+    });
+    patternsMap = newPatternsMap;
+    notifyCallback();
+  });
+
+  return () => {
+    unsubscribeProject();
+    unsubscribePatterns();
+  };
 };
 
 export const updateCursor = async (projectId, userId, cursorData) => {
