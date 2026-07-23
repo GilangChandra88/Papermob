@@ -44,6 +44,17 @@ export default function ToolsPanel({ projectData }) {
         </button>
 
         <button 
+          className={`btn ${activeTool === 'magic-wand' ? 'btn-primary' : 'btn-outline'}`}
+          onClick={() => {
+            store.setToolState({ activeTool: 'magic-wand' })
+          }}
+          title="Magic Wand (Pemilihan Ajaib)&#10;Pilih area terhubung, lalu klik warna di palet untuk menggantinya sekaligus."
+          style={{ padding: '0.6rem' }}
+        >
+          <Wand2 size={18} />
+        </button>
+
+        <button 
           className={`btn ${activeTool === 'brush' ? 'btn-primary' : 'btn-outline'}`}
           onClick={() => {
             store.setToolState({ activeTool: 'brush' })
@@ -53,19 +64,6 @@ export default function ToolsPanel({ projectData }) {
           style={{ padding: '0.6rem' }}
         >
           <Paintbrush size={18} />
-        </button>
-        
-
-
-        <button 
-          className={`btn ${activeTool === 'magic-wand' ? 'btn-primary' : 'btn-outline'}`}
-          onClick={() => {
-            store.setToolState({ activeTool: 'magic-wand' })
-          }}
-          title="Magic Wand (Pemilihan Ajaib)&#10;Pilih area terhubung, lalu klik warna di palet untuk menggantinya sekaligus."
-          style={{ padding: '0.6rem' }}
-        >
-          <Wand2 size={18} />
         </button>
 
         {/* Copy / Paste */}
