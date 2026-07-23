@@ -345,9 +345,9 @@ export default function ProjectEditor({ user }) {
               <React.Fragment key={pattern.id}>
                 {/* Insert Button Before Pattern (if index > 0) */}
                 {index > 0 && (
-                  <div className="insert-divider" onClick={() => store.addPattern(index)} title="Tambahkan pola di sini">
+                  <div className="insert-divider" onClick={() => store.addPattern(index)} title="Tambahkan pola di sini" style={{ height: `${32 / zoomLevel}px` }}>
                     <div className="line"></div>
-                    <button><Plus size={16} /></button>
+                    <button style={{ transform: `scale(${1 / zoomLevel})` }}><Plus size={16} /></button>
                     <div className="line"></div>
                   </div>
                 )}
@@ -362,18 +362,19 @@ export default function ProjectEditor({ user }) {
               </React.Fragment>
             ))}
 
-            {isEditor && (
-              <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center' }}>
-                <button 
-                  className="btn btn-outline" 
-                  style={{ padding: '1rem 4rem', fontSize: '1.1rem', borderRadius: '8px', borderStyle: 'dashed', borderWidth: '2px', display: 'flex', alignItems: 'center', pointerEvents: 'auto' }} 
-                  onClick={() => store.addPattern(patterns.length)}
-                >
-                  <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
-                </button>
-              </div>
-            )}
           </div>
+
+          {isEditor && (
+            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center' }}>
+              <button 
+                className="btn btn-outline" 
+                style={{ padding: '1rem 4rem', fontSize: '1.1rem', borderRadius: '8px', borderStyle: 'dashed', borderWidth: '2px', display: 'flex', alignItems: 'center', pointerEvents: 'auto' }} 
+                onClick={() => store.addPattern(patterns.length)}
+              >
+                <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
+              </button>
+            </div>
+          )}
         </div>
 
       </main>

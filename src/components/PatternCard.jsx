@@ -1,6 +1,7 @@
 import React, { memo, useMemo, useCallback, useRef, useEffect, Fragment } from 'react'
-import { ChevronUp, ChevronDown } from 'lucide-react'
+import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
 import { useProjectStore, getColName, getColIndex } from '../store/projectStore'
+import { auth } from '../firebase'
 
 export default memo(function PatternCard({ pattern, index, projectData }) {
   const { width, height } = projectData
@@ -20,6 +21,7 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const movePatternUp = useProjectStore(state => state.movePatternUp)
   const movePatternDown = useProjectStore(state => state.movePatternDown)
   const renamePattern = useProjectStore(state => state.renamePattern)
+  const deletePattern = useProjectStore(state => state.deletePattern)
   
   const baseCanvasRef = useRef(null)
   const hoverCanvasRef = useRef(null)
@@ -27,6 +29,7 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const dragStartRef = useRef(null)
 
   const isActive = activePatternId === pattern.id
+  const isOwner = auth.currentUser?.uid === projectData?.userId;
 
   const CELL_SIZE = 30;
   const GAP = 2;
@@ -328,13 +331,13 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
-          <span style={{ fontSize: '1.125rem', fontWeight: 'bold', whiteSpace: 'nowrap', userSelect: 'none' }}>POLA {index + 1} -&nbsp;</span>
+          <span style={{ fontSize: '1.5rem', fontWeight: 'bold', whiteSpace: 'nowrap', userSelect: 'none' }}>POLA {index + 1} -&nbsp;</span>
           <input 
             type="text"
             value={pattern.name.replace(/^Pola \d+(\s*-\s*)?/i, '')}
             onChange={(e) => renamePattern(pattern.id, e.target.value)}
             style={{ 
-              fontSize: '1.125rem', 
+              fontSize: '1.5rem', 
               fontWeight: 'bold', 
               border: '1px solid transparent', 
               background: 'transparent',
@@ -352,6 +355,11 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
         />
         </div>
         <div style={{ display: 'flex', gap: '0.25rem', paddingLeft: '1rem' }}>
+          {isOwner && (
+            <button className="btn btn-outline" onClick={() => deletePattern(pattern.id)} style={{ padding: '0.2rem', color: '#ef4444', borderColor: '#ef4444' }} title="Hapus Pola">
+              <Trash2 size={16} />
+            </button>
+          )}
           <button className="btn btn-outline" onClick={() => movePatternUp(pattern.id)} style={{ padding: '0.2rem' }} title="Naikkan urutan">
             <ChevronUp size={16} />
           </button>

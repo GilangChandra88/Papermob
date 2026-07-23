@@ -6,6 +6,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
   const { width, height, transitionSteps } = projectData
   const paintCell = useProjectStore(state => state.paintCell)
   const startStroke = useProjectStore(state => state.startStroke)
+  const endStroke = useProjectStore(state => state.endStroke)
   const patterns = useProjectStore(state => state.patterns)
   const activePatternId = useProjectStore(state => state.activePatternId)
   const brushSize = useProjectStore(state => state.brushSize)
@@ -17,6 +18,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
   const hoveredCoord = useProjectStore(state => state.hoveredCoord)
   const setHoveredCoord = useProjectStore(state => state.setHoveredCoord)
   const setToolState = useProjectStore(state => state.setToolState)
+  const zoomLevel = useProjectStore(state => state.zoomLevel)
   
   const baseCanvasRef = useRef(null)
   const hoverCanvasRef = useRef(null)
@@ -35,6 +37,16 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     if (index === 0) return null;
     return patterns[index - 1];
   }, [patterns, index]);
+
+  const toggleSimulation = useCallback(() => {
+    if (isSimulating) {
+      setIsSimulating(false);
+      setSimStep(0);
+    } else {
+      setIsSimulating(true);
+      setSimStep(0);
+    }
+  }, [isSimulating]);
 
   useEffect(() => {
     let timer;
@@ -377,11 +389,18 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
       marginLeft: '1rem',
       cursor: isActive ? 'crosshair' : 'pointer'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingRight: '1rem' }}>
-        <h3 style={{ fontSize: '1.125rem', paddingTop: '0.4rem', userSelect: 'none', margin: 0 }}>
-          Transisi - POLA {index + 1} - {pattern.name.replace(/^Pola \d+(\s*-\s*)?/i, '')}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, userSelect: 'none' }}>
+          Transisi - POLA {index + 1}
         </h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        
+        <div style={{ 
+          width: `${110 / zoomLevel}px`, 
+          height: `${32 / zoomLevel}px`, 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          alignItems: 'center' 
+        }}>
           {isSimulating && (
             <div style={{
               background: 'var(--primary)',
@@ -391,24 +410,25 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
               fontSize: '0.875rem',
               fontWeight: 600,
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              animation: 'pulse 2s infinite'
+              marginRight: '0.5rem',
+              transform: `scale(${1 / zoomLevel})`,
+              transformOrigin: 'right center'
             }}>
-              Operator: {simStep === 0 ? `Siap POLA ${index + 1}!` : `Aba-aba ${simStep}!`}
+              {simStep === 0 ? `Siap!` : `Aba-aba ${simStep}!`}
             </div>
           )}
           <button 
             className={`btn ${isSimulating ? 'btn-outline' : 'btn-primary'}`}
-            style={{ padding: '0.4rem 0.75rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isSimulating) {
-                setIsSimulating(false);
-                setSimStep(0);
-              } else {
-                setIsSimulating(true);
-                setSimStep(0);
-              }
+            style={{ 
+              padding: '0.4rem 0.75rem', 
+              fontSize: '0.875rem', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              transform: `scale(${1 / zoomLevel})`,
+              transformOrigin: 'right center'
             }}
+            onClick={toggleSimulation}
           >
             {isSimulating ? (
               <>

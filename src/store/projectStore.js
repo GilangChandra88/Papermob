@@ -310,6 +310,25 @@ export const useProjectStore = create((set, get) => ({
     return { patterns: newPatterns, activePatternId: id };
   }),
 
+  deletePattern: (id) => set((state) => {
+    if (state.patterns.length <= 1) return state; // Prevent deleting the last pattern
+    
+    const newPatterns = state.patterns.filter(p => p.id !== id);
+    let newActiveId = state.activePatternId;
+    if (newActiveId === id) {
+      newActiveId = newPatterns[0]?.id || null;
+    }
+    
+    if (state.projectData?.id) {
+      queueDeltaUpdate(state.projectData.id, { 
+        patternOrder: newPatterns.map(p => p.id),
+        [`patternsMap.${id}`]: null 
+      });
+    }
+
+    return { patterns: newPatterns, activePatternId: newActiveId };
+  }),
+
   // Action to paint a cell on the grid
   paintCell: (patternId, colStr, rowNum, target = 'pattern') => set((state) => {
     const patternIndex = state.patterns.findIndex(p => p.id === patternId)
