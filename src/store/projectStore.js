@@ -133,41 +133,59 @@ export const useProjectStore = create((set, get) => ({
     const stroke = state.past[state.past.length - 1];
     const newPast = state.past.slice(0, state.past.length - 1);
     
-    const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
-    if (patternIndex === -1) return state; // Pattern no longer exists
-
-    const newPatterns = [...state.patterns];
-    const pattern = { ...newPatterns[patternIndex] };
-    const newGrid = { ...pattern.grid };
-    const newTransitions = { ...pattern.transitions };
-    
+    let newPatterns = [...state.patterns];
+    let newActiveId = state.activePatternId;
     const firebaseDeltas = {};
 
-    for (const coord in stroke.deltas) {
-      const { old: oldVal, target } = stroke.deltas[coord];
-      
-      if (target === 'pattern') {
-        if (oldVal) {
-          newGrid[coord] = oldVal;
-          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = oldVal;
-        } else {
-          delete newGrid[coord];
-          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null; // Send null to delete from Firestore map
+    if (stroke.type === 'STRUCTURAL') {
+      if (stroke.subType === 'ADD_PATTERN') {
+         newPatterns = state.patterns.filter(p => p.id !== stroke.pattern.id);
+         firebaseDeltas[`patternsMap.${stroke.pattern.id}`] = null;
+         firebaseDeltas.patternOrder = stroke.previousOrder;
+         newActiveId = stroke.previousActiveId;
+      } else if (stroke.subType === 'DELETE_PATTERN') {
+         newPatterns.splice(stroke.index, 0, stroke.pattern);
+         firebaseDeltas[`patternsMap.${stroke.pattern.id}`] = stroke.pattern;
+         firebaseDeltas.patternOrder = stroke.previousOrder;
+         newActiveId = stroke.previousActiveId;
+      } else if (stroke.subType === 'MOVE_PATTERN') {
+         newPatterns.sort((a, b) => stroke.previousOrder.indexOf(a.id) - stroke.previousOrder.indexOf(b.id));
+         firebaseDeltas.patternOrder = stroke.previousOrder;
+         newActiveId = stroke.previousActiveId;
+      }
+    } else {
+      const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
+      if (patternIndex !== -1) {
+        const pattern = { ...newPatterns[patternIndex] };
+        const newGrid = { ...pattern.grid };
+        const newTransitions = { ...pattern.transitions };
+        
+        for (const coord in stroke.deltas) {
+          const { old: oldVal, target } = stroke.deltas[coord];
+          
+          if (target === 'pattern') {
+            if (oldVal) {
+              newGrid[coord] = oldVal;
+              firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = oldVal;
+            } else {
+              delete newGrid[coord];
+              firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null;
+            }
+          } else if (target === 'transition') {
+            if (oldVal) {
+              newTransitions[coord] = oldVal;
+              firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = oldVal;
+            } else {
+              delete newTransitions[coord];
+              firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
+            }
+          }
         }
-      } else if (target === 'transition') {
-        if (oldVal) {
-          newTransitions[coord] = oldVal;
-          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = oldVal;
-        } else {
-          delete newTransitions[coord];
-          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
-        }
+        pattern.grid = newGrid;
+        pattern.transitions = newTransitions;
+        newPatterns[patternIndex] = pattern;
       }
     }
-    
-    pattern.grid = newGrid;
-    pattern.transitions = newTransitions;
-    newPatterns[patternIndex] = pattern;
 
     if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
       queueDeltaUpdate(state.projectData.id, firebaseDeltas);
@@ -176,6 +194,7 @@ export const useProjectStore = create((set, get) => ({
     return {
       past: newPast,
       patterns: newPatterns,
+      activePatternId: newActiveId,
       future: [stroke, ...state.future]
     }
   }),
@@ -186,41 +205,62 @@ export const useProjectStore = create((set, get) => ({
     const stroke = state.future[0];
     const newFuture = state.future.slice(1);
     
-    const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
-    if (patternIndex === -1) return state;
-
-    const newPatterns = [...state.patterns];
-    const pattern = { ...newPatterns[patternIndex] };
-    const newGrid = { ...pattern.grid };
-    const newTransitions = { ...pattern.transitions };
-    
+    let newPatterns = [...state.patterns];
+    let newActiveId = state.activePatternId;
     const firebaseDeltas = {};
 
-    for (const coord in stroke.deltas) {
-      const { new: newVal, target } = stroke.deltas[coord];
-      
-      if (target === 'pattern') {
-        if (newVal) {
-          newGrid[coord] = newVal;
-          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = newVal;
-        } else {
-          delete newGrid[coord];
-          firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null;
+    if (stroke.type === 'STRUCTURAL') {
+      if (stroke.subType === 'ADD_PATTERN') {
+         newPatterns.splice(stroke.index, 0, stroke.pattern);
+         firebaseDeltas[`patternsMap.${stroke.pattern.id}`] = stroke.pattern;
+         firebaseDeltas.patternOrder = newPatterns.map(p => p.id);
+         newActiveId = stroke.pattern.id;
+      } else if (stroke.subType === 'DELETE_PATTERN') {
+         newPatterns = state.patterns.filter(p => p.id !== stroke.pattern.id);
+         firebaseDeltas[`patternsMap.${stroke.pattern.id}`] = null;
+         firebaseDeltas.patternOrder = newPatterns.map(p => p.id);
+         if (newActiveId === stroke.pattern.id) {
+           newActiveId = newPatterns[0]?.id || null;
+         }
+      } else if (stroke.subType === 'MOVE_PATTERN') {
+         newPatterns.sort((a, b) => stroke.newOrder.indexOf(a.id) - stroke.newOrder.indexOf(b.id));
+         firebaseDeltas.patternOrder = stroke.newOrder;
+         newActiveId = stroke.newActiveId;
+      }
+    } else {
+      const patternIndex = state.patterns.findIndex(p => p.id === stroke.patternId);
+      if (patternIndex !== -1) {
+        const pattern = { ...newPatterns[patternIndex] };
+        const newGrid = { ...pattern.grid };
+        const newTransitions = { ...pattern.transitions };
+        
+        for (const coord in stroke.deltas) {
+          const { new: newVal, target } = stroke.deltas[coord];
+          
+          if (target === 'pattern') {
+            if (newVal) {
+              newGrid[coord] = newVal;
+              firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = newVal;
+            } else {
+              delete newGrid[coord];
+              firebaseDeltas[`patternsMap.${stroke.patternId}.grid.${coord}`] = null;
+            }
+          } else if (target === 'transition') {
+            if (newVal) {
+              newTransitions[coord] = newVal;
+              firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = newVal;
+            } else {
+              delete newTransitions[coord];
+              firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
+            }
+          }
         }
-      } else if (target === 'transition') {
-        if (newVal) {
-          newTransitions[coord] = newVal;
-          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = newVal;
-        } else {
-          delete newTransitions[coord];
-          firebaseDeltas[`patternsMap.${stroke.patternId}.transitions.${coord}`] = null;
-        }
+        
+        pattern.grid = newGrid;
+        pattern.transitions = newTransitions;
+        newPatterns[patternIndex] = pattern;
       }
     }
-    
-    pattern.grid = newGrid;
-    pattern.transitions = newTransitions;
-    newPatterns[patternIndex] = pattern;
 
     if (state.projectData?.id && Object.keys(firebaseDeltas).length > 0) {
       queueDeltaUpdate(state.projectData.id, firebaseDeltas);
@@ -229,6 +269,7 @@ export const useProjectStore = create((set, get) => ({
     return {
       past: [...state.past, stroke],
       patterns: newPatterns,
+      activePatternId: newActiveId,
       future: newFuture
     }
   }),
@@ -250,11 +291,16 @@ export const useProjectStore = create((set, get) => ({
       hasTransition
     );
     
+    const previousOrder = state.patterns.map(p => p.id);
     let newPatterns = [...state.patterns];
+    let insertedIndex;
+
     if (indexToInsert !== null && indexToInsert >= 0 && indexToInsert <= newPatterns.length) {
       newPatterns.splice(indexToInsert, 0, newPattern);
+      insertedIndex = indexToInsert;
     } else {
       newPatterns.push(newPattern);
+      insertedIndex = newPatterns.length - 1;
     }
     
     if (state.projectData?.id) {
@@ -264,9 +310,23 @@ export const useProjectStore = create((set, get) => ({
       });
     }
 
+    const stroke = {
+      type: 'STRUCTURAL',
+      subType: 'ADD_PATTERN',
+      pattern: newPattern,
+      index: insertedIndex,
+      previousOrder: previousOrder,
+      previousActiveId: state.activePatternId
+    };
+
+    const newPast = [...state.past, stroke];
+    if (newPast.length > 30) newPast.shift();
+
     return {
       patterns: newPatterns,
-      activePatternId: newId
+      activePatternId: newId,
+      past: newPast,
+      future: []
     }
   }),
 
@@ -284,6 +344,7 @@ export const useProjectStore = create((set, get) => ({
       transitions: JSON.parse(JSON.stringify(sourcePattern.transitions || {}))
     };
     
+    const previousOrder = state.patterns.map(p => p.id);
     const newPatterns = [...state.patterns];
     newPatterns.splice(index + 1, 0, newPattern);
     
@@ -294,9 +355,23 @@ export const useProjectStore = create((set, get) => ({
       });
     }
 
+    const stroke = {
+      type: 'STRUCTURAL',
+      subType: 'ADD_PATTERN', // It's essentially an ADD action!
+      pattern: newPattern,
+      index: index + 1,
+      previousOrder: previousOrder,
+      previousActiveId: state.activePatternId
+    };
+
+    const newPast = [...state.past, stroke];
+    if (newPast.length > 30) newPast.shift();
+
     return {
       patterns: newPatterns,
-      activePatternId: newId
+      activePatternId: newId,
+      past: newPast,
+      future: []
     }
   }),
 
@@ -316,33 +391,63 @@ export const useProjectStore = create((set, get) => ({
     const index = state.patterns.findIndex(p => p.id === id);
     if (index <= 0) return state; // Already at top
     
+    const previousOrder = state.patterns.map(p => p.id);
     const newPatterns = [...state.patterns];
     const temp = newPatterns[index - 1];
     newPatterns[index - 1] = newPatterns[index];
     newPatterns[index] = temp;
     
-    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newPatterns.map(p => p.id) });
+    const newOrder = newPatterns.map(p => p.id);
+    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newOrder });
 
-    return { patterns: newPatterns, activePatternId: id };
+    const stroke = {
+      type: 'STRUCTURAL',
+      subType: 'MOVE_PATTERN',
+      previousOrder: previousOrder,
+      newOrder: newOrder,
+      previousActiveId: state.activePatternId,
+      newActiveId: id
+    };
+    const newPast = [...state.past, stroke];
+    if (newPast.length > 30) newPast.shift();
+
+    return { patterns: newPatterns, activePatternId: id, past: newPast, future: [] };
   }),
 
   movePatternDown: (id) => set((state) => {
     const index = state.patterns.findIndex(p => p.id === id);
     if (index === -1 || index === state.patterns.length - 1) return state; // Already at bottom
     
+    const previousOrder = state.patterns.map(p => p.id);
     const newPatterns = [...state.patterns];
     const temp = newPatterns[index + 1];
     newPatterns[index + 1] = newPatterns[index];
     newPatterns[index] = temp;
     
-    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newPatterns.map(p => p.id) });
+    const newOrder = newPatterns.map(p => p.id);
+    if (state.projectData?.id) queueDeltaUpdate(state.projectData.id, { patternOrder: newOrder });
 
-    return { patterns: newPatterns, activePatternId: id };
+    const stroke = {
+      type: 'STRUCTURAL',
+      subType: 'MOVE_PATTERN',
+      previousOrder: previousOrder,
+      newOrder: newOrder,
+      previousActiveId: state.activePatternId,
+      newActiveId: id
+    };
+    const newPast = [...state.past, stroke];
+    if (newPast.length > 30) newPast.shift();
+
+    return { patterns: newPatterns, activePatternId: id, past: newPast, future: [] };
   }),
 
   deletePattern: (id) => set((state) => {
     if (state.patterns.length <= 1) return state; // Prevent deleting the last pattern
     
+    const index = state.patterns.findIndex(p => p.id === id);
+    const deletedPattern = state.patterns[index];
+    const previousOrder = state.patterns.map(p => p.id);
+
     const newPatterns = state.patterns.filter(p => p.id !== id);
     let newActiveId = state.activePatternId;
     if (newActiveId === id) {
@@ -356,7 +461,19 @@ export const useProjectStore = create((set, get) => ({
       });
     }
 
-    return { patterns: newPatterns, activePatternId: newActiveId };
+    const stroke = {
+      type: 'STRUCTURAL',
+      subType: 'DELETE_PATTERN',
+      pattern: deletedPattern,
+      index: index,
+      previousOrder: previousOrder,
+      previousActiveId: state.activePatternId
+    };
+    
+    const newPast = [...state.past, stroke];
+    if (newPast.length > 30) newPast.shift();
+
+    return { patterns: newPatterns, activePatternId: newActiveId, past: newPast, future: [] };
   }),
 
   // Action to paint a cell on the grid
