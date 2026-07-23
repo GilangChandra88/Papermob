@@ -362,19 +362,34 @@ export default function ProjectEditor({ user }) {
               </React.Fragment>
             ))}
 
+            {isEditor && (
+              <div style={{ 
+                marginTop: `${32 / zoomLevel}px`, 
+                display: 'flex', 
+                justifyContent: 'center', 
+                height: `${100 / zoomLevel}px`
+              }}>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ 
+                    padding: '1rem 4rem', 
+                    fontSize: '1.1rem', 
+                    borderRadius: '8px', 
+                    borderStyle: 'dashed', 
+                    borderWidth: '2px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    pointerEvents: 'auto',
+                    transform: `scale(${1 / zoomLevel})`,
+                    transformOrigin: 'center top'
+                  }} 
+                  onClick={() => store.addPattern(patterns.length)}
+                >
+                  <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
+                </button>
+              </div>
+            )}
           </div>
-
-          {isEditor && (
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center' }}>
-              <button 
-                className="btn btn-outline" 
-                style={{ padding: '1rem 4rem', fontSize: '1.1rem', borderRadius: '8px', borderStyle: 'dashed', borderWidth: '2px', display: 'flex', alignItems: 'center', pointerEvents: 'auto' }} 
-                onClick={() => store.addPattern(patterns.length)}
-              >
-                <Plus size={20} style={{ marginRight: '0.5rem' }} /> Tambah Pola Baru
-              </button>
-            </div>
-          )}
         </div>
 
       </main>
