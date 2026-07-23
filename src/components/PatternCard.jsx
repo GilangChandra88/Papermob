@@ -380,7 +380,8 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
           gap: '0.25rem', 
           paddingLeft: '1rem',
           transform: `scale(${1 / zoomLevel})`,
-          transformOrigin: 'right center'
+          transformOrigin: 'right center',
+          visibility: isActive ? 'visible' : 'hidden'
         }}>
           {isOwner && (
             <button className="btn btn-outline" onClick={() => duplicatePattern(pattern.id)} style={{ padding: '0.2rem' }} title="Duplikat Pola">

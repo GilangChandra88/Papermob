@@ -422,11 +422,11 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
         </h3>
         
         <div style={{ 
-          width: `${110 / zoomLevel}px`, 
-          height: `${32 / zoomLevel}px`, 
           display: 'flex', 
           justifyContent: 'flex-end', 
-          alignItems: 'center' 
+          alignItems: 'center',
+          gap: '0.5rem',
+          visibility: isActive ? 'visible' : 'hidden'
         }}>
           {isSimulating && (
             <div style={{
@@ -437,7 +437,6 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
               fontSize: '0.875rem',
               fontWeight: 600,
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              marginRight: '0.5rem',
               transform: `scale(${1 / zoomLevel})`,
               transformOrigin: 'right center'
             }}>
