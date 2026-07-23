@@ -22,6 +22,7 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const movePatternDown = useProjectStore(state => state.movePatternDown)
   const renamePattern = useProjectStore(state => state.renamePattern)
   const deletePattern = useProjectStore(state => state.deletePattern)
+  const zoomLevel = useProjectStore(state => state.zoomLevel)
   
   const baseCanvasRef = useRef(null)
   const hoverCanvasRef = useRef(null)
@@ -329,15 +330,28 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
       transition: 'opacity 0.2s, border 0.2s',
       cursor: isActive ? 'crosshair' : 'pointer'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
-          <span style={{ fontSize: '1.5rem', fontWeight: 'bold', whiteSpace: 'nowrap', userSelect: 'none' }}>POLA {index + 1} -&nbsp;</span>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: `${16 / zoomLevel}px`,
+        height: `${40 / zoomLevel}px`
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          flex: 1, 
+          transform: `scale(${1 / zoomLevel})`,
+          transformOrigin: 'left center',
+          width: 'max-content'
+        }}>
+          <span style={{ fontSize: '1.125rem', fontWeight: 'bold', whiteSpace: 'nowrap', userSelect: 'none' }}>POLA {index + 1} -&nbsp;</span>
           <input 
             type="text"
             value={pattern.name.replace(/^Pola \d+(\s*-\s*)?/i, '')}
             onChange={(e) => renamePattern(pattern.id, e.target.value)}
             style={{ 
-              fontSize: '1.5rem', 
+              fontSize: '1.125rem', 
               fontWeight: 'bold', 
               border: '1px solid transparent', 
               background: 'transparent',
@@ -354,7 +368,13 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
           onBlur={(e) => e.target.style.border = '1px solid transparent'}
         />
         </div>
-        <div style={{ display: 'flex', gap: '0.25rem', paddingLeft: '1rem' }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: '0.25rem', 
+          paddingLeft: '1rem',
+          transform: `scale(${1 / zoomLevel})`,
+          transformOrigin: 'right center'
+        }}>
           {isOwner && (
             <button className="btn btn-outline" onClick={() => deletePattern(pattern.id)} style={{ padding: '0.2rem', color: '#ef4444', borderColor: '#ef4444' }} title="Hapus Pola">
               <Trash2 size={16} />

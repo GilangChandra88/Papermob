@@ -389,8 +389,21 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
       marginLeft: '1rem',
       cursor: isActive ? 'crosshair' : 'pointer'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, userSelect: 'none' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: `${16 / zoomLevel}px`,
+        height: `${40 / zoomLevel}px`
+      }}>
+        <h3 style={{ 
+          fontSize: '1.125rem', 
+          fontWeight: 'bold', 
+          margin: 0, 
+          userSelect: 'none',
+          transform: `scale(${1 / zoomLevel})`,
+          transformOrigin: 'left center'
+        }}>
           Transisi - POLA {index + 1}
         </h3>
         
