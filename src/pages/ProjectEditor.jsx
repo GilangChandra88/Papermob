@@ -296,7 +296,7 @@ export default function ProjectEditor({ user }) {
               position: 'relative',
               display: 'flex', 
               flexDirection: 'column', 
-              gap: '2rem',
+              gap: '32px',
               transform: `scale(${zoomLevel})`,
               transformOrigin: 'top left',
               willChange: 'transform',
@@ -346,7 +346,7 @@ export default function ProjectEditor({ user }) {
               <React.Fragment key={pattern.id}>
                 {/* Insert Button Before Pattern (if index > 0) */}
                 {index > 0 && (
-                  <div className="insert-divider" onClick={() => store.addPattern(index)} title="Tambahkan pola di sini" style={{ height: `${32 / zoomLevel}px` }}>
+                  <div className="insert-divider" onClick={() => store.addPattern(index)} title="Tambahkan pola di sini" style={{ height: '32px' }}>
                     <div className="line"></div>
                     <button style={{ transform: `scale(${1 / zoomLevel})` }}><Plus size={16} /></button>
                     <div className="line"></div>
@@ -370,10 +370,10 @@ export default function ProjectEditor({ user }) {
 
             {isEditor && (
               <div style={{ 
-                marginTop: `${32 / zoomLevel}px`, 
+                marginTop: '32px', 
                 display: 'flex', 
                 justifyContent: 'center', 
-                height: `${100 / zoomLevel}px`
+                height: '100px'
               }}>
                 <button 
                   className="btn btn-outline" 
