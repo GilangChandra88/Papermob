@@ -80,6 +80,8 @@ export default function Simulation() {
         loadedPatterns = data.patterns;
       }
       setPatterns(loadedPatterns)
+      if (data.stepDelay) setStepDelay(data.stepDelay);
+      if (data.patternDelay) setPatternDelay(data.patternDelay);
     } catch (e) {
       console.error(e)
       alert("Gagal memuat projek")
@@ -88,6 +90,19 @@ export default function Simulation() {
       setLoading(false)
     }
   }
+
+  const handleSaveDelays = async () => {
+    if (projectData?.id) {
+      try {
+        await updateProjectData(projectData.id, {
+          stepDelay,
+          patternDelay
+        });
+      } catch (e) {
+        console.error("Failed to save delays", e);
+      }
+    }
+  };
 
   const handleSavePatternName = async (patternId) => {
     if (!editingPatternName.trim()) return;
@@ -446,6 +461,7 @@ export default function Simulation() {
                 type="number" 
                 value={stepDelay} 
                 onChange={e => setStepDelay(Number(e.target.value))}
+                onBlur={handleSaveDelays}
                 disabled={isSimulating}
                 style={{ width: '100px', padding: '0.4rem' }}
               />
@@ -456,6 +472,7 @@ export default function Simulation() {
                 type="number" 
                 value={patternDelay} 
                 onChange={e => setPatternDelay(Number(e.target.value))}
+                onBlur={handleSaveDelays}
                 disabled={isSimulating}
                 style={{ width: '100px', padding: '0.4rem' }}
               />
