@@ -426,7 +426,9 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
           justifyContent: 'flex-end', 
           alignItems: 'center',
           gap: '0.5rem',
-          visibility: isActive ? 'visible' : 'hidden'
+          visibility: isActive ? 'visible' : 'hidden',
+          transform: `scale(${1 / zoomLevel})`,
+          transformOrigin: 'right center'
         }}>
           {isSimulating && (
             <div style={{
@@ -436,9 +438,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
               borderRadius: '9999px',
               fontSize: '0.875rem',
               fontWeight: 600,
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              transform: `scale(${1 / zoomLevel})`,
-              transformOrigin: 'right center'
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}>
               {simStep === 0 ? `Siap!` : `Aba-aba ${simStep}!`}
             </div>
@@ -450,9 +450,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
               fontSize: '0.875rem', 
               display: 'flex', 
               alignItems: 'center', 
-              gap: '0.5rem',
-              transform: `scale(${1 / zoomLevel})`,
-              transformOrigin: 'right center'
+              gap: '0.5rem'
             }}
             onClick={toggleSimulation}
           >
