@@ -84,7 +84,26 @@ export const getProjectById = async (projectId) => {
     const docRef = doc(db, 'projects', projectId)
     const docSnap = await getDoc(docRef)
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() }
+      const data = { id: docSnap.id, ...docSnap.data() }
+      
+      // Fetch patterns subcollection for backward compatibility with Export and Simulation pages
+      const patternsRef = collection(db, `projects/${projectId}/patterns`);
+      const patternsSnap = await getDocs(patternsRef);
+      
+      const patternsMap = {};
+      patternsSnap.forEach(docSnap => {
+        patternsMap[docSnap.id] = docSnap.data();
+      });
+      
+      // Auto-migrate legacy patterns array to patternsMap if not done
+      if (data.patterns && Array.isArray(data.patterns) && Object.keys(patternsMap).length === 0) {
+        data.patterns.forEach(p => {
+          patternsMap[p.id] = p;
+        });
+      }
+      
+      data.patternsMap = patternsMap;
+      return data;
     } else {
       throw new Error("Project not found")
     }
