@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard'
 import ProjectEditor from './pages/ProjectEditor'
 import Simulation from './pages/Simulation'
 import ExportPage from './pages/ExportPage'
+import Migration from './pages/Migration'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -35,6 +36,8 @@ function App() {
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
+        <Route path="/export/:projectId" element={user ? <ExportPage user={user} /> : <Navigate to="/login" />} />
+        <Route path="/migration" element={user ? <Migration /> : <Navigate to="/login" />} />
         <Route path="/project/:id" element={user ? <ProjectEditor user={user} /> : <Navigate to="/login" />} />
         <Route path="/project/:id/simulation" element={user ? <Simulation /> : <Navigate to="/login" />} />
         <Route path="/project/:id/export" element={user ? <ExportPage user={user} /> : <Navigate to="/login" />} />

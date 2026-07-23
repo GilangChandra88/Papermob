@@ -4,7 +4,7 @@ import { auth } from '../firebase'
 import { signOut } from 'firebase/auth'
 import { getProjects, createProject, getSharedProjects } from '../utils/firebaseUtils'
 import ProjectForm from '../components/ProjectForm'
-import { Plus, LogOut, FileImage } from 'lucide-react'
+import { Plus, LogOut, FileImage, DownloadCloud } from 'lucide-react'
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate()
@@ -83,9 +83,14 @@ export default function Dashboard({ user }) {
               Dibagikan ke Saya
             </button>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            <Plus size={18} /> Buat Projek
-          </button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn btn-outline" onClick={() => navigate('/migration')}>
+              <DownloadCloud size={18} /> Migrasi Data
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+              <Plus size={18} /> Buat Projek
+            </button>
+          </div>
         </div>
 
         {loading ? (
