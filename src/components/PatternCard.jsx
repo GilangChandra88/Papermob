@@ -307,6 +307,7 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const handleGridMouseDown = useCallback((e) => {
     if (!isActive) {
       setToolState({ activePatternId: pattern.id });
+      return;
     }
     
     const coord = calculateGridCoord(e);
