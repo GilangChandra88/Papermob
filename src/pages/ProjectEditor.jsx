@@ -51,9 +51,9 @@ export default function ProjectEditor({ user }) {
         // Reconstruct the array from patternsMap if it exists (Delta Updates Architecture)
         let serverPatterns = null;
         if (newData.patternsMap && newData.patternOrder) {
-          serverPatterns = newData.patternOrder.map(id => newData.patternsMap[id]);
+          serverPatterns = newData.patternOrder.map(id => newData.patternsMap[id]).filter(Boolean);
         } else if (newData.patterns) {
-          serverPatterns = newData.patterns;
+          serverPatterns = newData.patterns.filter(Boolean);
         }
 
         if (serverPatterns) {

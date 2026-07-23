@@ -66,10 +66,12 @@ export const useProjectStore = create((set, get) => ({
     
     let initialPatterns = [];
     if (data.patternsMap && data.patternOrder) {
-      initialPatterns = data.patternOrder.map(id => data.patternsMap[id]);
+      initialPatterns = data.patternOrder.map(id => data.patternsMap[id]).filter(Boolean);
     } else if (data.patterns && data.patterns.length > 0) {
-      initialPatterns = data.patterns;
-    } else {
+      initialPatterns = data.patterns.filter(Boolean);
+    }
+    
+    if (!initialPatterns || initialPatterns.length === 0) {
       initialPatterns = [generateDefaultPattern(Date.now(), 'Pola 1 - Untitled', data.width, data.height, defaultColor, defaultPos, data.hasTransition)];
     }
 
@@ -88,7 +90,7 @@ export const useProjectStore = create((set, get) => ({
     set({
       projectData: data,
       patterns: initialPatterns,
-      activePatternId: initialPatterns[0].id,
+      activePatternId: initialPatterns[0]?.id || Date.now(),
       selectedColor: defaultColor,
       selectedPosition: defaultPos,
       selectedTransitionStep: 1,
