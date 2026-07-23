@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getProjectById, updateProjectData, subscribeToProject, hasPendingUpdates } from '../utils/firebaseUtils'
 import { useProjectStore } from '../store/projectStore'
-import { ArrowLeft, Save, Plus, Play, CheckCircle2, Share2, RotateCcw, Download } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Play, CheckCircle2, Share2, RotateCcw, Download, Pencil, Check } from 'lucide-react'
 
 import PatternCard from '../components/PatternCard'
 import TransitionCard from '../components/TransitionCard'
@@ -28,6 +28,8 @@ export default function ProjectEditor({ user }) {
   const [showShareModal, setShowShareModal] = useState(false)
   const [showRecoveryModal, setShowRecoveryModal] = useState(false)
   const [patternToDelete, setPatternToDelete] = useState(null)
+  const [editingName, setEditingName] = useState(false)
+  const [tempName, setTempName] = useState('')
 
   // Access Control Logic
   const isOwner = user?.uid === projectData?.userId;
@@ -179,6 +181,18 @@ export default function ProjectEditor({ user }) {
     navigate('/dashboard')
   }
 
+  const handleSaveName = async () => {
+    if (tempName.trim() && tempName !== projectData.name) {
+      try {
+        await updateProjectData(id, { name: tempName.trim() })
+        showToast('Nama projek berhasil diubah')
+      } catch (e) {
+        showToast('Gagal mengubah nama projek')
+      }
+    }
+    setEditingName(false)
+  }
+
   if (loading || !projectData) {
     return <div className="app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading Editor...</div>
   }
@@ -205,7 +219,46 @@ export default function ProjectEditor({ user }) {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>{projectData.name}</h1>
+            {editingName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input 
+                  type="text" 
+                  value={tempName}
+                  onChange={e => setTempName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveName();
+                    if (e.key === 'Escape') setEditingName(false);
+                  }}
+                  autoFocus
+                  onBlur={handleSaveName}
+                  style={{
+                    fontSize: '1.25rem', fontWeight: 'bold', padding: '0 0.2rem', 
+                    borderRadius: '4px', border: '1px solid var(--primary)', outline: 'none',
+                    margin: 0, width: '300px', backgroundColor: 'transparent', color: 'var(--text-main)'
+                  }}
+                />
+              </div>
+            ) : (
+              <h1 
+                style={{ 
+                  fontSize: '1.25rem', fontWeight: 'bold', margin: 0, 
+                  cursor: isEditor ? 'text' : 'default', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '1px 0.2rem'
+                }}
+                onClick={() => {
+                  if (isEditor) {
+                    setTempName(projectData.name);
+                    setEditingName(true);
+                  }
+                }}
+                title={isEditor ? "Klik untuk mengubah nama" : ""}
+                onMouseEnter={(e) => { if (isEditor) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.05)' }}
+                onMouseLeave={(e) => { if (isEditor) e.currentTarget.style.backgroundColor = 'transparent' }}
+              >
+                {projectData.name}
+                {isEditor && <Pencil size={14} style={{ color: 'var(--text-muted)', cursor: 'pointer', opacity: 0.7 }} />}
+              </h1>
+            )}
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {projectData.width} x {projectData.height} | {projectData.hasTransition ? 'Dengan Transisi' : 'Tanpa Transisi'}
               <span style={{ 
