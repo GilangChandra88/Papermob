@@ -270,6 +270,36 @@ export const useProjectStore = create((set, get) => ({
     }
   }),
 
+  duplicatePattern: (id) => set((state) => {
+    const index = state.patterns.findIndex(p => p.id === id);
+    if (index === -1) return state;
+
+    const sourcePattern = state.patterns[index];
+    const newId = state.patterns.length > 0 ? Math.max(...state.patterns.map(p => p.id)) + 1 : 1;
+    
+    const newPattern = {
+      id: newId,
+      name: `${sourcePattern.name} (Copy)`,
+      grid: JSON.parse(JSON.stringify(sourcePattern.grid || {})),
+      transitions: JSON.parse(JSON.stringify(sourcePattern.transitions || {}))
+    };
+    
+    const newPatterns = [...state.patterns];
+    newPatterns.splice(index + 1, 0, newPattern);
+    
+    if (state.projectData?.id) {
+      queueDeltaUpdate(state.projectData.id, {
+        [`patternsMap.${newId}`]: newPattern,
+        patternOrder: newPatterns.map(p => p.id)
+      });
+    }
+
+    return {
+      patterns: newPatterns,
+      activePatternId: newId
+    }
+  }),
+
   renamePattern: (id, newName) => set((state) => {
     const newPatterns = state.patterns.map(p => 
       p.id === id ? { ...p, name: newName } : p

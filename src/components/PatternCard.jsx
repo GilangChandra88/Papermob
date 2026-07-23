@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useRef, useEffect, Fragment } from 'react'
-import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, Trash2, Copy } from 'lucide-react'
 import { useProjectStore, getColName, getColIndex } from '../store/projectStore'
 import { auth } from '../firebase'
 
@@ -22,6 +22,7 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
   const movePatternDown = useProjectStore(state => state.movePatternDown)
   const renamePattern = useProjectStore(state => state.renamePattern)
   const deletePattern = useProjectStore(state => state.deletePattern)
+  const duplicatePattern = useProjectStore(state => state.duplicatePattern)
   const zoomLevel = useProjectStore(state => state.zoomLevel)
   
   const baseCanvasRef = useRef(null)
@@ -377,7 +378,16 @@ export default memo(function PatternCard({ pattern, index, projectData }) {
           transformOrigin: 'right center'
         }}>
           {isOwner && (
-            <button className="btn btn-outline" onClick={() => deletePattern(pattern.id)} style={{ padding: '0.2rem', color: '#ef4444', borderColor: '#ef4444' }} title="Hapus Pola">
+            <button className="btn btn-outline" onClick={() => duplicatePattern(pattern.id)} style={{ padding: '0.2rem' }} title="Duplikat Pola">
+              <Copy size={16} />
+            </button>
+          )}
+          {isOwner && (
+            <button className="btn btn-outline" onClick={() => {
+              if (window.confirm("Apakah Anda yakin ingin menghapus pola ini?")) {
+                deletePattern(pattern.id);
+              }
+            }} style={{ padding: '0.2rem', color: '#ef4444', borderColor: '#ef4444' }} title="Hapus Pola">
               <Trash2 size={16} />
             </button>
           )}
