@@ -56,6 +56,16 @@ export default function Simulation() {
   const [stepDelay, setStepDelay] = useState(2000)
   const [patternDelay, setPatternDelay] = useState(3000)
 
+  // Drone Camera Settings
+  const [cameraMode, setCameraMode] = useState(false)
+  const [paperShape, setPaperShape] = useState('kotak')
+  const [simulateHeight, setSimulateHeight] = useState(false)
+  const [camRotX, setCamRotX] = useState(0)
+  const [camRotZ, setCamRotZ] = useState(0)
+  const [camPanX, setCamPanX] = useState(0)
+  const [camPanY, setCamPanY] = useState(0)
+  const [zoomLevel, setZoomLevel] = useState(1)
+
   // Simulation State
   const [isSimulating, setIsSimulating] = useState(false)
   const [simPhase, setSimPhase] = useState('idle') // 'idle' | 'flipping' | 'waiting'
@@ -82,6 +92,14 @@ export default function Simulation() {
       setPatterns(loadedPatterns)
       if (data.stepDelay) setStepDelay(data.stepDelay);
       if (data.patternDelay) setPatternDelay(data.patternDelay);
+      if (data.cameraMode !== undefined) setCameraMode(data.cameraMode);
+      if (data.paperShape !== undefined) setPaperShape(data.paperShape);
+      if (data.simulateHeight !== undefined) setSimulateHeight(data.simulateHeight);
+      if (data.camRotX !== undefined) setCamRotX(data.camRotX);
+      if (data.camRotZ !== undefined) setCamRotZ(data.camRotZ);
+      if (data.camPanX !== undefined) setCamPanX(data.camPanX);
+      if (data.camPanY !== undefined) setCamPanY(data.camPanY);
+      if (data.zoomLevel !== undefined) setZoomLevel(data.zoomLevel);
     } catch (e) {
       console.error(e)
       alert("Gagal memuat projek")
@@ -91,18 +109,63 @@ export default function Simulation() {
     }
   }
 
-  const handleSaveDelays = async () => {
+  const handleSaveSettings = async (overrides = {}) => {
     if (projectData?.id) {
       try {
         await updateProjectData(projectData.id, {
           stepDelay,
-          patternDelay
+          patternDelay,
+          cameraMode,
+          paperShape,
+          simulateHeight,
+          camRotX,
+          camRotZ,
+          camPanX,
+          camPanY,
+          zoomLevel,
+          ...overrides
         });
       } catch (e) {
-        console.error("Failed to save delays", e);
+        console.error("Failed to save settings", e);
       }
     }
   };
+
+  useEffect(() => {
+    if (!cameraMode) return;
+    
+    const handleKeyDown = (e) => {
+      // WASD for panning
+      if (e.key === 'w' || e.key === 'W') setCamPanY(y => y + 20);
+      if (e.key === 's' || e.key === 'S') setCamPanY(y => y - 20);
+      if (e.key === 'a' || e.key === 'A') setCamPanX(x => x + 20);
+      if (e.key === 'd' || e.key === 'D') setCamPanX(x => x - 20);
+      
+      // QE for yaw (camRotZ)
+      if (e.key === 'q' || e.key === 'Q') setCamRotZ(z => z - 5);
+      if (e.key === 'e' || e.key === 'E') setCamRotZ(z => z + 5);
+      
+      // Space/Ctrl for Zoom (Space = Naik/Zoom out, Ctrl = Turun/Zoom in)
+      if (e.key === ' ') {
+        e.preventDefault();
+        setZoomLevel(z => Math.max(z - 0.1, 0.2));
+      }
+      if (e.key === 'Control') setZoomLevel(z => Math.min(z + 0.1, 5));
+      
+      // Up/Down for tilt (camRotX)
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCamRotX(x => Math.min(x + 5, 80));
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCamRotX(x => Math.max(x - 5, 0));
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cameraMode]);
 
   const handleSavePatternName = async (patternId) => {
     if (!editingPatternName.trim()) return;
@@ -304,12 +367,45 @@ export default function Simulation() {
           }
 
           if (cellData) {
-            ctx.fillStyle = cellData.color;
-            ctx.fillRect(drawX, rect.y, drawW, rect.h);
+            let cx = drawX + drawW / 2;
+            let cy = rect.y + rect.h / 2;
+            let size = drawW;
+            let isBerdiri = false;
+            
+            if (simulateHeight && cameraMode) {
+              if (cellData.pos === 'J') {
+                size = drawW * 0.7;
+              } else if (cellData.pos === 'B') {
+                size = drawW * 1.15;
+                isBerdiri = true;
+              }
+            }
 
-            if (cellData.pos === 'J') {
-              ctx.fillStyle = 'rgba(0,0,0,0.4)';
-              ctx.fillRect(drawX, rect.y, drawW, rect.h);
+            const drawShape = (x, y, s, color) => {
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              if (paperShape === 'bulat') {
+                ctx.arc(x, y, s/2, 0, Math.PI*2);
+              } else if (paperShape === 'segi6') {
+                for (let i = 0; i < 6; i++) {
+                  ctx.lineTo(x + s/2 * Math.cos(i * Math.PI / 3 + Math.PI/6), y + s/2 * Math.sin(i * Math.PI / 3 + Math.PI/6));
+                }
+              } else {
+                ctx.rect(x - s/2, y - s/2, s, s);
+              }
+              ctx.fill();
+            };
+
+            if (isBerdiri) {
+              drawShape(cx + (camRotX > 20 ? 0 : 5), cy + 5, drawW, 'rgba(0,0,0,0.3)');
+            }
+            
+            drawShape(cx, cy, size, cellData.color);
+
+            if (!simulateHeight || !cameraMode) {
+               if (cellData.pos === 'J') drawShape(cx, cy, size, 'rgba(0,0,0,0.4)');
+            } else if (cellData.pos === 'J') {
+               drawShape(cx, cy, size, 'rgba(0,0,0,0.2)');
             }
           }
 
@@ -329,7 +425,7 @@ export default function Simulation() {
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     }
-  }, [projectData, patterns, activePatternIndex, isSimulating, simStep, simPhase, canvasWidth, canvasHeight]);
+  }, [projectData, patterns, activePatternIndex, isSimulating, simStep, simPhase, canvasWidth, canvasHeight, cameraMode, paperShape, simulateHeight, camRotX]);
 
   const toggleSimulation = () => {
     if (isSimulating) {
@@ -461,7 +557,7 @@ export default function Simulation() {
                 type="number" 
                 value={stepDelay} 
                 onChange={e => setStepDelay(Number(e.target.value))}
-                onBlur={handleSaveDelays}
+                onBlur={() => handleSaveSettings()}
                 disabled={isSimulating}
                 style={{ width: '100px', padding: '0.4rem' }}
               />
@@ -472,11 +568,45 @@ export default function Simulation() {
                 type="number" 
                 value={patternDelay} 
                 onChange={e => setPatternDelay(Number(e.target.value))}
-                onBlur={handleSaveDelays}
+                onBlur={() => handleSaveSettings()}
                 disabled={isSimulating}
                 style={{ width: '100px', padding: '0.4rem' }}
               />
             </div>
+
+            <div style={{ height: '30px', width: '1px', backgroundColor: 'var(--border-color)' }}></div>
+            
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Bentuk</p>
+              <select 
+                value={paperShape}
+                onChange={e => { setPaperShape(e.target.value); handleSaveSettings({ paperShape: e.target.value }); }}
+                style={{ padding: '0.4rem' }}
+              >
+                <option value="kotak">Kotak</option>
+                <option value="bulat">Bulat</option>
+                <option value="segi6">Segi Enam</option>
+              </select>
+            </div>
+            
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500 }}>
+              <input 
+                type="checkbox" 
+                checked={simulateHeight} 
+                onChange={e => { setSimulateHeight(e.target.checked); handleSaveSettings({ simulateHeight: e.target.checked }); }} 
+              />
+              Efek Ketinggian
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, padding: '0.4rem 0.75rem', backgroundColor: cameraMode ? 'var(--primary)' : 'var(--bg-color)', color: cameraMode ? 'white' : 'var(--text-main)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+              <input 
+                type="checkbox" 
+                checked={cameraMode} 
+                onChange={e => { setCameraMode(e.target.checked); handleSaveSettings({ cameraMode: e.target.checked }); }}
+                style={{ display: 'none' }}
+              />
+              🚁 Kamera Drone
+            </label>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -513,12 +643,16 @@ export default function Simulation() {
         </div>
 
         {/* Canvas Area */}
-        <div style={{ flex: 1, padding: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'auto' }}>
+        <div style={{ flex: 1, padding: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', perspective: '1500px' }}>
           <div style={{ 
             width: canvasWidth, 
             height: canvasHeight, 
-            transform: `scale(${finalZoom})`,
+            transform: cameraMode 
+              ? `translate(${camPanX}px, ${camPanY}px) scale(${finalZoom * zoomLevel}) rotateX(${camRotX}deg) rotateZ(${camRotZ}deg)`
+              : `scale(${finalZoom * zoomLevel})`,
+            transformStyle: 'preserve-3d',
             transformOrigin: 'center center',
+            transition: 'transform 0.1s ease-out',
             boxShadow: 'var(--shadow-lg)',
             backgroundColor: 'white'
           }}>
