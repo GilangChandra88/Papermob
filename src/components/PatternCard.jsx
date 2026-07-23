@@ -29,6 +29,7 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
   const hoverCanvasRef = useRef(null)
   const lastHoveredRef = useRef(null)
   const dragStartRef = useRef(null)
+  const isDraggingRef = useRef(false)
 
   const isActive = activePatternId === pattern.id
   const isOwner = auth.currentUser?.uid === projectData?.userId;
@@ -267,7 +268,7 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
       lastHoveredRef.current = coordKey;
     }
     
-    if (e.buttons === 1) {
+    if (e.buttons === 1 && isDraggingRef.current) {
       if (activeTool === 'select' && dragStartRef.current) {
         const minCol = Math.min(dragStartRef.current.col, coord.col);
         const maxCol = Math.max(dragStartRef.current.col, coord.col);
@@ -294,6 +295,7 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
 
   useEffect(() => {
     const handleGlobalMouseUp = () => {
+      isDraggingRef.current = false;
       endStroke();
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
@@ -302,6 +304,7 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
 
   const handleGridMouseUp = useCallback(() => {
     dragStartRef.current = null;
+    isDraggingRef.current = false;
     endStroke();
   }, [endStroke]);
 
@@ -313,6 +316,8 @@ export default memo(function PatternCard({ pattern, index, projectData, onDelete
     
     const coord = calculateGridCoord(e);
     if (!coord) return;
+    
+    isDraggingRef.current = true;
     
     if (activeTool === 'select') {
       dragStartRef.current = coord;

@@ -24,6 +24,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
   const hoverCanvasRef = useRef(null)
   const lastHoveredRef = useRef(null)
   const dragStartRef = useRef(null)
+  const isDraggingRef = useRef(false)
 
   const [isSimulating, setIsSimulating] = useState(false)
   const [simStep, setSimStep] = useState(0)
@@ -333,7 +334,7 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
       lastHoveredRef.current = coordKey;
     }
     
-    if (e.buttons === 1) {
+    if (e.buttons === 1 && isDraggingRef.current) {
       if (activeTool === 'select' && dragStartRef.current) {
         const minCol = Math.min(dragStartRef.current.col, coord.col);
         const maxCol = Math.max(dragStartRef.current.col, coord.col);
@@ -358,8 +359,18 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     lastHoveredRef.current = null;
   }, [setHoveredCoord]);
 
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      isDraggingRef.current = false;
+      endStroke();
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [endStroke]);
+
   const handleGridMouseUp = useCallback(() => {
     dragStartRef.current = null;
+    isDraggingRef.current = false;
   }, []);
 
   const handleGridMouseDown = useCallback((e) => {
@@ -370,6 +381,8 @@ export default memo(function TransitionCard({ pattern, index, projectData }) {
     
     const coord = calculateGridCoord(e);
     if (!coord) return;
+    
+    isDraggingRef.current = true;
     
     if (activeTool === 'select') {
       dragStartRef.current = coord;
