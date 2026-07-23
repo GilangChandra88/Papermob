@@ -71,7 +71,9 @@ export default function Simulation() {
   const [simPhase, setSimPhase] = useState('idle') // 'idle' | 'flipping' | 'waiting'
   const [simStep, setSimStep] = useState(0)
   
-  const canvasRef = useRef(null)
+  const bgCanvasRef = useRef(null)
+  const jongkokCanvasRef = useRef(null)
+  const berdiriCanvasRef = useRef(null)
   const animationsRef = useRef(new Map())
   const animFrameRef = useRef(null)
 
@@ -284,37 +286,44 @@ export default function Simulation() {
 
   // Canvas Render Loop
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !projectData) return;
-    const ctx = canvas.getContext('2d');
+    const bgCanvas = bgCanvasRef.current;
+    const jongkokCanvas = jongkokCanvasRef.current;
+    const berdiriCanvas = berdiriCanvasRef.current;
+    if (!bgCanvas || !jongkokCanvas || !berdiriCanvas || !projectData) return;
+    
+    const ctx0 = bgCanvas.getContext('2d');
+    const ctx1 = jongkokCanvas.getContext('2d');
+    const ctx2 = berdiriCanvas.getContext('2d');
 
     const render = () => {
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx0.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx1.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx2.clearRect(0, 0, canvasWidth, canvasHeight);
 
       // Draw Top-Left empty header
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
+      ctx0.fillStyle = '#f8fafc';
+      ctx0.fillRect(0, 0, HEADER_COL_W, HEADER_ROW_H);
 
       // Draw Column Headers
-      ctx.font = 'bold 10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx0.font = 'bold 10px sans-serif';
+      ctx0.textAlign = 'center';
+      ctx0.textBaseline = 'middle';
       for (let c = 1; c <= projectData.width; c++) {
         const colName = getColName(c);
         const rect = getCellRect(c, 1);
-        ctx.fillStyle = '#f1f5f9';
-        ctx.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
-        ctx.fillStyle = '#1e293b';
-        ctx.fillText(colName, rect.x + rect.w/2, HEADER_ROW_H/2);
+        ctx0.fillStyle = '#f1f5f9';
+        ctx0.fillRect(rect.x, 0, rect.w, HEADER_ROW_H);
+        ctx0.fillStyle = '#1e293b';
+        ctx0.fillText(colName, rect.x + rect.w/2, HEADER_ROW_H/2);
       }
 
       // Draw Row Headers
       for (let r = 1; r <= projectData.height; r++) {
         const rect = getCellRect(1, r);
-        ctx.fillStyle = '#f1f5f9';
-        ctx.fillRect(0, rect.y, HEADER_COL_W, rect.h);
-        ctx.fillStyle = '#1e293b';
-        ctx.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
+        ctx0.fillStyle = '#f1f5f9';
+        ctx0.fillRect(0, rect.y, HEADER_COL_W, rect.h);
+        ctx0.fillStyle = '#1e293b';
+        ctx0.fillText(r.toString(), HEADER_COL_W/2, rect.y + rect.h/2);
       }
 
       const now = Date.now();
@@ -326,8 +335,8 @@ export default function Simulation() {
           const coord = `${getColName(c)}${r}`;
           const rect = getCellRect(c, r);
 
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+          ctx0.fillStyle = '#ffffff';
+          ctx0.fillRect(rect.x, rect.y, rect.w, rect.h);
 
           const anim = animationsRef.current.get(coord);
           let cellData = null;
@@ -371,47 +380,54 @@ export default function Simulation() {
             let cy = rect.y + rect.h / 2;
             let size = drawW;
             let isBerdiri = false;
+            let isJongkok = false;
             
             if (simulateHeight && cameraMode) {
               if (cellData.pos === 'J') {
                 size = drawW * 0.7;
+                isJongkok = true;
               } else if (cellData.pos === 'B') {
                 size = drawW * 1.15;
                 isBerdiri = true;
               }
+            } else {
+              if (cellData.pos === 'J') isJongkok = true;
+              else isBerdiri = true; // In 2D mode without simulation, draw everything on ctx2 anyway
             }
 
-            const drawShape = (x, y, s, color) => {
-              ctx.fillStyle = color;
-              ctx.beginPath();
+            const drawShape = (targetCtx, x, y, s, color) => {
+              targetCtx.fillStyle = color;
+              targetCtx.beginPath();
               if (paperShape === 'bulat') {
-                ctx.arc(x, y, s/2, 0, Math.PI*2);
+                targetCtx.arc(x, y, s/2, 0, Math.PI*2);
               } else if (paperShape === 'segi6') {
                 for (let i = 0; i < 6; i++) {
-                  ctx.lineTo(x + s/2 * Math.cos(i * Math.PI / 3 + Math.PI/6), y + s/2 * Math.sin(i * Math.PI / 3 + Math.PI/6));
+                  targetCtx.lineTo(x + s/2 * Math.cos(i * Math.PI / 3 + Math.PI/6), y + s/2 * Math.sin(i * Math.PI / 3 + Math.PI/6));
                 }
               } else {
-                ctx.rect(x - s/2, y - s/2, s, s);
+                targetCtx.rect(x - s/2, y - s/2, s, s);
               }
-              ctx.fill();
+              targetCtx.fill();
             };
 
-            if (isBerdiri) {
-              drawShape(cx + (camRotX > 20 ? 0 : 5), cy + 5, drawW, 'rgba(0,0,0,0.3)');
+            // Draw shadow base on ctx0
+            if (simulateHeight && cameraMode) {
+              drawShape(ctx0, cx, cy, drawW * 0.6, 'rgba(0,0,0,0.15)'); // Feet / Base shadow
             }
             
-            drawShape(cx, cy, size, cellData.color);
+            const targetCtx = isJongkok ? ctx1 : ctx2;
+            drawShape(targetCtx, cx, cy, size, cellData.color);
 
             if (!simulateHeight || !cameraMode) {
-               if (cellData.pos === 'J') drawShape(cx, cy, size, 'rgba(0,0,0,0.4)');
-            } else if (cellData.pos === 'J') {
-               drawShape(cx, cy, size, 'rgba(0,0,0,0.2)');
+               if (isJongkok) drawShape(targetCtx, cx, cy, size, 'rgba(0,0,0,0.4)');
+            } else if (isJongkok) {
+               drawShape(targetCtx, cx, cy, size, 'rgba(0,0,0,0.2)');
             }
           }
 
-          ctx.strokeStyle = '#cbd5e1';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+          ctx0.strokeStyle = '#cbd5e1';
+          ctx0.lineWidth = 1;
+          ctx0.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
         }
       }
 
@@ -656,12 +672,26 @@ export default function Simulation() {
             boxShadow: 'var(--shadow-lg)',
             backgroundColor: 'white'
           }}>
-            <canvas 
-              ref={canvasRef}
-              width={canvasWidth}
-              height={canvasHeight}
-              style={{ display: 'block' }}
-            />
+            <div style={{ position: 'relative', width: canvasWidth, height: canvasHeight, transformStyle: 'preserve-3d' }}>
+              <canvas 
+                ref={bgCanvasRef}
+                width={canvasWidth}
+                height={canvasHeight}
+                style={{ position: 'absolute', top: 0, left: 0, display: 'block', transform: 'translateZ(0px)' }}
+              />
+              <canvas 
+                ref={jongkokCanvasRef}
+                width={canvasWidth}
+                height={canvasHeight}
+                style={{ position: 'absolute', top: 0, left: 0, display: 'block', transform: (simulateHeight && cameraMode) ? 'translateZ(15px)' : 'translateZ(0px)' }}
+              />
+              <canvas 
+                ref={berdiriCanvasRef}
+                width={canvasWidth}
+                height={canvasHeight}
+                style={{ position: 'absolute', top: 0, left: 0, display: 'block', transform: (simulateHeight && cameraMode) ? 'translateZ(40px)' : 'translateZ(0px)' }}
+              />
+            </div>
           </div>
         </div>
       </div>
